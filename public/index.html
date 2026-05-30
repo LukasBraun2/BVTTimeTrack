@@ -4,267 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Tempo — Time Tracker</title>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600&family=Geist+Mono:wght@300;400;500&display=swap');
-*{box-sizing:border-box;margin:0;padding:0;}
-:root{
-  --bg0:#0A0B0F;--bg1:#0F1117;--bg2:#161820;--bg3:#1D1F2A;--bg4:#252837;
-  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
-  --t0:#F0F0F5;--t1:#9B9DB0;--t2:#5A5C70;
-  --accent:#F5A623;--adim:rgba(245,166,35,0.12);
-  --green:#22C97A;--red:#F05C5C;
-}
-body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',system-ui,sans-serif;min-height:100vh;}
-.mono{font-family:'Geist Mono',monospace;font-variant-numeric:tabular-nums;}
-::-webkit-scrollbar{width:4px;} ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px;}
-
-/* ── Login ── */
-#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;}
-.login-card{background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:40px 48px;width:400px;max-width:92vw;box-shadow:0 40px 80px rgba(0,0,0,.5);text-align:center;}
-.logo{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:36px;}
-.logo-icon{width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-.logo-text{font-size:24px;font-weight:700;letter-spacing:-.03em;}
-.login-card h1{font-size:19px;font-weight:600;margin-bottom:8px;letter-spacing:-.01em;}
-.login-card p{font-size:13px;color:var(--t2);margin-bottom:30px;line-height:1.65;}
-.google-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:12px;background:#fff;border:none;border-radius:10px;padding:13px 20px;font-size:14px;font-weight:600;color:#1a1a1a;cursor:pointer;transition:all .2s;font-family:inherit;box-shadow:0 2px 12px rgba(0,0,0,.2);}
-.google-btn:hover{box-shadow:0 4px 20px rgba(0,0,0,.35);transform:translateY(-1px);}
-.google-btn:disabled{opacity:.6;cursor:not-allowed;transform:none;}
-.login-note{font-size:11px;color:var(--t2);margin-top:18px;line-height:1.5;}
-
-/* ── App shell ── */
-#app{display:none;min-height:100vh;}
-.shell{display:flex;min-height:100vh;}
-
-/* ── Sidebar ── */
-.sidebar{width:216px;background:var(--bg1);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:20px 12px;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto;}
-.sb-logo{display:flex;align-items:center;gap:9px;padding:2px 10px;margin-bottom:28px;}
-.sb-logo-icon{width:26px;height:26px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-.sb-logo-text{font-size:14.5px;font-weight:600;letter-spacing:-.02em;}
-.nav-btn{background:none;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;color:var(--t1);padding:7px 13px;border-radius:7px;transition:all .15s;display:flex;align-items:center;gap:9px;width:100%;text-align:left;}
-.nav-btn:hover,.nav-btn.on{color:var(--t0);background:var(--bg3);}
-.sb-section{font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--t2);text-transform:uppercase;padding:0 10px;margin:16px 0 8px;}
-.proj-item{display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:6px;font-size:12.5px;color:var(--t1);}
-.proj-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
-.sidebar-footer{margin-top:auto;padding-top:14px;border-top:1px solid var(--border);}
-.user-row{display:flex;align-items:center;gap:9px;padding:6px 10px;margin-bottom:6px;}
-.user-avatar{width:28px;height:28px;border-radius:50%;flex-shrink:0;object-fit:cover;}
-.user-avatar-placeholder{width:28px;height:28px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0;}
-.user-name{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.user-email{font-size:11px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.signout-nav{color:var(--red)!important;}
-
-/* ── Main ── */
-.main{flex:1;min-width:0;display:flex;flex-direction:column;}
-.topbar{background:var(--bg1);border-bottom:1px solid var(--border);padding:0 28px;height:54px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-.topbar-title{font-size:14px;font-weight:600;letter-spacing:-.01em;}
-.topbar-stats{display:flex;gap:24px;align-items:center;}
-.tstat{text-align:right;}
-.tstat-label{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--t2);margin-bottom:2px;}
-.tstat-val{font-size:13px;font-weight:500;}
-.content{flex:1;padding:28px;overflow-y:auto;}
-
-/* ── Timer card ── */
-.timer-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:28px;transition:border-color .3s,box-shadow .3s;}
-.timer-card.recording{border-color:rgba(245,166,35,.3);box-shadow:0 0 0 1px rgba(245,166,35,.08),0 8px 40px rgba(245,166,35,.06);}
-.rec-badge{display:flex;align-items:center;gap:7px;margin-bottom:12px;}
-.rec-dot{width:7px;height:7px;border-radius:50%;background:var(--red);display:inline-block;}
-.rec-text{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--red);}
-.manual-badge{display:flex;align-items:center;gap:6px;margin-bottom:12px;}
-.manual-text{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);}
-.timer-row{display:flex;align-items:center;gap:12px;}
-.timer-input{background:none;border:none;outline:none;color:var(--t0);font-family:'Plus Jakarta Sans',sans-serif;font-size:14.5px;width:100%;font-weight:400;}
-.timer-input::placeholder{color:var(--t2);}
-.timer-controls{display:flex;align-items:center;gap:7px;flex-shrink:0;}
-.divider{width:1px;height:22px;background:var(--border);}
-.elapsed{font-size:19px;font-weight:500;color:var(--accent);min-width:90px;text-align:right;}
-.chip{display:flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:6px 11px;font-size:12px;color:var(--t1);cursor:pointer;transition:all .15s;white-space:nowrap;font-family:inherit;position:relative;}
-.chip:hover{border-color:var(--border2);color:var(--t0);}
-.chip.active{border-color:rgba(245,166,35,.4);color:var(--accent);background:var(--adim);}
-.start-btn{width:40px;height:40px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;}
-.start-btn.go{background:var(--green);} .start-btn.go:hover{background:#1cb36c;transform:scale(1.06);}
-.start-btn.stop{background:var(--red);} .start-btn.stop:hover{background:#d94f4f;transform:scale(1.06);}
-.mode-btn{width:30px;height:30px;border-radius:7px;border:1px solid var(--border);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;color:var(--t2);}
-.mode-btn.manual-on{border-color:rgba(245,166,35,.6);background:var(--adim);color:var(--accent);}
-.time-input{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:13px;color:var(--t0);font-family:'Geist Mono',monospace;outline:none;width:100px;}
-.add-btn{background:var(--green);border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;color:#0A0B0F;cursor:pointer;font-family:inherit;white-space:nowrap;}
-.add-btn:hover{background:#1cb36c;}
-.timer-err{font-size:12px;color:var(--red);margin-top:10px;}
-
-/* ── Dropdown ── */
-.drop{position:fixed;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:5px;z-index:999;min-width:200px;box-shadow:0 20px 50px rgba(0,0,0,.6);display:none;}
-.drop.open{display:block;}
-.ditem{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:12.5px;color:var(--t1);transition:background .1s;}
-.ditem:hover{background:var(--bg4);color:var(--t0);}
-.ditem.sel{color:var(--t0);}
-.check-box{width:14px;height:14px;border:1.5px solid var(--border2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .1s;}
-.check-box.checked{background:var(--accent);border-color:var(--accent);}
-
-/* ── Day groups ── */
-.day-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;padding:0 2px;}
-.day-label{font-size:12.5px;font-weight:600;letter-spacing:-.01em;}
-.day-count{font-size:11.5px;color:var(--t2);}
-.day-total{font-size:12px;color:var(--t1);font-weight:500;}
-.entries-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:22px;}
-.entry-row{display:flex;align-items:center;gap:14px;padding:13px 18px;border-top:1px solid var(--border);transition:background .1s;position:relative;}
-.entry-row:first-child{border-top:none;}
-.entry-row:hover{background:var(--bg3);}
-.entry-row:hover .row-acts{opacity:1;}
-.entry-bar{width:3px;height:36px;border-radius:2px;flex-shrink:0;}
-.entry-body{flex:1;min-width:0;}
-.entry-desc{font-size:14px;font-weight:500;margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.entry-meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
-.entry-proj{font-size:11.5px;font-weight:500;}
-.meta-dot{color:var(--border2);}
-.tag-pill{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--bg4);color:var(--t2);border:1px solid var(--border);}
-.entry-time{font-size:12px;color:var(--t2);text-align:right;flex-shrink:0;}
-.entry-dur{font-size:14px;font-weight:500;min-width:80px;text-align:right;flex-shrink:0;}
-.row-acts{display:flex;gap:2px;opacity:0;transition:opacity .12s;}
-.ib{background:none;border:none;cursor:pointer;color:var(--t2);padding:5px;border-radius:5px;display:flex;align-items:center;transition:all .12s;}
-.ib:hover{color:var(--t0);background:var(--bg4);}
-.empty{text-align:center;padding:80px 0;color:var(--t2);}
-.empty-icon{opacity:.35;margin-bottom:16px;}
-.empty-title{font-size:14px;font-weight:500;color:var(--t1);margin-bottom:5px;}
-.db-loading{text-align:center;padding:40px;color:var(--t2);font-size:13px;}
-
-/* ── Reports ── */
-.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:28px;}
-.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px 22px;}
-.stat-lbl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t2);margin-bottom:12px;}
-.stat-val{font-size:28px;font-weight:400;margin-bottom:5px;}
-.stat-sub{font-size:12px;color:var(--t2);}
-.proj-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
-.proj-card-hdr{padding:16px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
-.proj-card-hdr span:first-child{font-size:13px;font-weight:600;}
-.proj-row{padding:18px 22px;border-top:1px solid var(--border);}
-.proj-row:first-of-type{border-top:none;}
-.proj-row-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
-.proj-row-left{display:flex;align-items:center;gap:10px;}
-.proj-glow-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
-.proj-name{font-size:13.5px;font-weight:500;}
-.proj-count{font-size:12px;color:var(--t2);}
-.proj-row-right{display:flex;gap:18px;align-items:center;}
-.proj-pct{font-size:12px;color:var(--t2);}
-.proj-dur{font-size:13px;font-weight:500;}
-.bar-track{height:4px;border-radius:2px;background:var(--bg4);}
-.bar-fill{height:100%;border-radius:2px;transition:width .6s ease;}
-
-/* ── Modal ── */
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:400;display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px);}
-.modal-bg.open{display:flex;}
-.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:16px;padding:32px;width:460px;max-width:95vw;box-shadow:0 30px 80px rgba(0,0,0,.7);}
-.modal-title{font-size:16px;font-weight:600;margin-bottom:22px;letter-spacing:-.01em;}
-.field{margin-bottom:18px;}
-.field label{display:block;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);margin-bottom:7px;}
-.field input,.field select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:13.5px;color:var(--t0);font-family:inherit;outline:none;transition:border-color .15s;}
-.field input:focus,.field select:focus{border-color:rgba(245,166,35,.5);}
-.field select option{background:var(--bg3);}
-.time-row{display:flex;align-items:center;gap:10px;}
-.time-col{flex:1;}
-.time-col-lbl{font-size:11px;color:var(--t2);margin-bottom:5px;}
-.time-arrow{color:var(--t2);font-size:16px;margin-top:18px;}
-.duration-col{flex-shrink:0;margin-top:18px;min-width:72px;text-align:right;}
-.duration-lbl{font-size:11px;color:var(--t2);margin-bottom:6px;}
-.duration-val{font-size:14px;font-weight:500;}
-.time-err{font-size:12px;color:var(--red);margin-top:7px;}
-.tag-toggle-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px;}
-.tag-toggle{padding:5px 13px;border-radius:20px;font-size:12px;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:transparent;color:var(--t1);transition:all .12s;}
-.tag-toggle.on{border-color:rgba(245,166,35,.5);background:rgba(245,166,35,.1);color:var(--accent);}
-.modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:26px;}
-.btn-sec{background:none;border:1px solid var(--border2);border-radius:7px;padding:9px 16px;font-family:inherit;font-size:13px;color:var(--t1);cursor:pointer;transition:all .15s;}
-.btn-sec:hover{background:var(--bg3);color:var(--t0);}
-.btn-pri{background:var(--accent);color:#0A0B0F;border:none;border-radius:7px;padding:9px 20px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s;}
-.btn-pri:hover{opacity:.88;}
-
-@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
-.pulse{animation:pulse 1.8s ease-in-out infinite;}
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
-.fadeIn{animation:fadeIn .25s ease;}
-
-/* ── Mobile nav overlay ── */
-.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:199;backdrop-filter:blur(4px);}
-.sidebar-overlay.open{display:block;}
-.hamburger{display:none;background:none;border:none;cursor:pointer;color:var(--t1);padding:6px;border-radius:6px;align-items:center;justify-content:center;}
-.hamburger:hover{background:var(--bg3);color:var(--t0);}
-
-/* ── Responsive ── */
-@media(max-width:768px){
-  /* Sidebar becomes a slide-in drawer */
-  .sidebar{position:fixed;left:-240px;top:0;z-index:200;width:240px;height:100vh;transition:left .25s ease;box-shadow:none;}
-  .sidebar.open{left:0;box-shadow:4px 0 40px rgba(0,0,0,.5);}
-  .hamburger{display:flex;}
-
-  /* Topbar adjustments */
-  .topbar{padding:0 16px;gap:10px;}
-  .topbar-title{font-size:13px;}
-  .tstat-label{font-size:9px;}
-  .tstat-val{font-size:12px;}
-  .topbar-stats{gap:14px;}
-
-  /* Content padding */
-  .content{padding:16px;}
-
-  /* Timer card stacks */
-  .timer-row{flex-wrap:wrap;gap:10px;}
-  .timer-input{font-size:14px;width:100%;}
-  .timer-controls{width:100%;flex-wrap:wrap;gap:6px;}
-  .divider{display:none;}
-  .elapsed{font-size:16px;min-width:70px;}
-
-  /* Manual inputs stack */
-  #timer-controls-manual > div{flex-wrap:wrap;gap:6px;}
-  .time-input{width:calc(50% - 10px)!important;}
-  .add-btn{width:100%;}
-
-  /* Entry rows compact */
-  .entry-row{padding:11px 12px;gap:10px;}
-  .entry-bar{height:30px;}
-  .entry-desc{font-size:13px;}
-  .entry-time{display:none;}
-  .entry-dur{font-size:13px;min-width:64px;}
-  .row-acts{opacity:1!important;}
-
-  /* Day header */
-  .day-header{padding:0;}
-
-  /* Stats grid stacks to 1 col */
-  .stat-grid{grid-template-columns:1fr;}
-  .stat-val{font-size:22px;}
-
-  /* Reports proj rows compact */
-  .proj-row{padding:14px 16px;}
-  .proj-card-hdr{padding:12px 16px;}
-
-  /* Modal full-screen on mobile */
-  .modal{width:100%;max-width:100%;border-radius:16px 16px 0 0;padding:24px 20px;position:fixed;bottom:0;left:0;right:0;max-height:90vh;overflow-y:auto;}
-  .modal-bg.open{align-items:flex-end;}
-  .time-row{flex-wrap:wrap;gap:8px;}
-  .time-col{flex:1;min-width:120px;}
-  .time-arrow{display:none;}
-  .duration-col{width:100%;margin-top:0;text-align:left;display:flex;align-items:center;gap:8px;}
-  .duration-lbl{margin-bottom:0;}
-
-  /* Sub entry rows indent less */
-  .sub-row-indent{padding-left:22px!important;}
-}
-
-@media(max-width:480px){
-  .login-card{padding:28px 20px;}
-  .logo-text{font-size:20px;}
-  .topbar-stats{gap:10px;}
-  .tstat:last-child{display:none;}
-  .chip span:not(svg){max-width:80px;overflow:hidden;text-overflow:ellipsis;}
-  .entry-dur{min-width:56px;font-size:12px;}
-  .stat-val{font-size:20px;}
-}
-
-@media(min-width:769px) and (max-width:1024px){
-  .sidebar{width:180px;}
-  .content{padding:20px;}
-  .stat-grid{grid-template-columns:repeat(3,1fr);}
-  .entry-time{display:none;}
-  .timer-controls{flex-wrap:wrap;gap:6px;}
-}
-</style>
+<link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
 
@@ -290,10 +30,8 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
 <!-- ══════════════ APP ══════════════ -->
 <div id="app">
   <div class="shell">
-    <!-- Mobile sidebar overlay -->
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 
-    <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
       <div class="sb-logo">
         <div class="sb-logo-icon">
@@ -301,7 +39,6 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
         </div>
         <span class="sb-logo-text">Tempo</span>
       </div>
-
       <button class="nav-btn on" id="nav-tracker" onclick="setView('tracker')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         Tracker
@@ -310,12 +47,9 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z"/></svg>
         Reports
       </button>
-
       <div class="sb-section">Projects</div>
-      <div class="proj-item"><span class="proj-dot" style="background:#818CF8;box-shadow:0 0 5px #818CF880;"></span>Academy</div>
-      <div class="proj-item"><span class="proj-dot" style="background:#22C97A;box-shadow:0 0 5px #22C97A80;"></span>Volunteer</div>
-      <div class="proj-item"><span class="proj-dot" style="background:#F5A623;box-shadow:0 0 5px #F5A62380;"></span>Module 5</div>
-
+      <!-- Project list populated from /api/config -->
+      <div id="sidebar-projects"></div>
       <div class="sidebar-footer">
         <div class="user-row">
           <div id="user-avatar-wrap"></div>
@@ -331,7 +65,6 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
       </div>
     </aside>
 
-    <!-- Main -->
     <div class="main">
       <div class="topbar">
         <div style="display:flex;align-items:center;gap:10px;">
@@ -341,20 +74,13 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
           <div class="topbar-title" id="topbar-title">Time Tracker</div>
         </div>
         <div class="topbar-stats">
-          <div class="tstat">
-            <div class="tstat-label">Today</div>
-            <div class="tstat-val mono" id="stat-today">00:00:00</div>
-          </div>
-          <div class="tstat">
-            <div class="tstat-label">This week</div>
-            <div class="tstat-val mono" id="stat-week">00:00:00</div>
-          </div>
+          <div class="tstat"><div class="tstat-label">Today</div><div class="tstat-val mono" id="stat-today">00:00:00</div></div>
+          <div class="tstat"><div class="tstat-label">This week</div><div class="tstat-val mono" id="stat-week">00:00:00</div></div>
         </div>
       </div>
 
       <!-- Tracker view -->
       <div class="content" id="view-tracker">
-        <!-- Timer card -->
         <div class="timer-card" id="timer-card">
           <div class="rec-badge" id="rec-badge" style="display:none;">
             <span class="rec-dot pulse"></span>
@@ -367,18 +93,15 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
           <div class="timer-row">
             <input class="timer-input" id="timer-desc" placeholder="What are you working on?" onkeydown="if(event.key==='Enter'&&timerMode==='timer'&&!timerStart)startTimer()"/>
             <div class="timer-controls">
-              <!-- Project chip -->
               <button class="chip" id="proj-chip" onclick="toggleDrop(event,'proj-drop',this)">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
                 <span id="proj-chip-text">Project</span>
               </button>
-              <!-- Tags chip -->
               <button class="chip" id="tags-chip" onclick="toggleDrop(event,'tags-drop',this)">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                 <span id="tags-chip-text">Tags</span>
               </button>
               <div class="divider"></div>
-              <!-- Timer controls -->
               <div id="timer-controls-timer">
                 <div style="display:flex;align-items:center;gap:7px;">
                   <div class="mono elapsed" id="elapsed-display" style="display:none;"></div>
@@ -387,7 +110,6 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
                   </button>
                 </div>
               </div>
-              <!-- Manual controls -->
               <div id="timer-controls-manual" style="display:none;">
                 <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
                   <input type="date" class="time-input mono" id="manual-date" style="width:130px;"/>
@@ -397,7 +119,6 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
                   <button class="add-btn" onclick="logManual()">+ Add</button>
                 </div>
               </div>
-              <!-- Mode toggle -->
               <button class="mode-btn" id="mode-btn" onclick="toggleMode()" title="Switch between timer and manual entry">
                 <svg id="mode-icon-calendar" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                 <svg id="mode-icon-clock" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -407,7 +128,6 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
           <div class="timer-err" id="timer-err" style="display:none;"></div>
         </div>
 
-        <!-- Entry list -->
         <div id="db-loading" class="db-loading">Loading your entries…</div>
         <div id="entry-list"></div>
         <div id="empty-state" class="empty" style="display:none;">
@@ -436,28 +156,20 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
   </div>
 </div>
 
-<!-- Dropdowns -->
+<!-- Dropdowns — project options injected after /api/config loads -->
 <div class="drop" id="proj-drop">
   <div class="ditem" onclick="selectProj(null)"><span style="font-size:12px;color:var(--t2);">No project</span></div>
-  <div class="ditem" id="proj-opt-academy" onclick="selectProj('academy')"><span style="width:8px;height:8px;border-radius:50%;background:#818CF8;flex-shrink:0;display:inline-block;"></span>Academy</div>
-  <div class="ditem" id="proj-opt-volunteer" onclick="selectProj('volunteer')"><span style="width:8px;height:8px;border-radius:50%;background:#22C97A;flex-shrink:0;display:inline-block;"></span>Volunteer</div>
-  <div class="ditem" id="proj-opt-module5" onclick="selectProj('module5')"><span style="width:8px;height:8px;border-radius:50%;background:#F5A623;flex-shrink:0;display:inline-block;"></span>Module 5</div>
 </div>
 <div class="drop" id="tags-drop" style="max-height:320px;overflow-y:auto;"></div>
 
-<!-- Edit modal -->
+<!-- Edit modal — project <select> options injected after /api/config loads -->
 <div class="modal-bg" id="edit-modal">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title">Edit entry</div>
     <input type="hidden" id="edit-id"/>
     <div class="field"><label>Description</label><input type="text" id="edit-desc"/></div>
     <div class="field"><label>Project</label>
-      <select id="edit-proj">
-        <option value="">No project</option>
-        <option value="academy">Academy</option>
-        <option value="volunteer">Volunteer</option>
-        <option value="module5">Module 5</option>
-      </select>
+      <select id="edit-proj"><option value="">No project</option></select>
     </div>
     <div class="field"><label>Date</label>
       <input type="date" id="edit-date" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:13.5px;color:var(--t0);font-family:'Geist Mono',monospace;outline:none;transition:border-color .15s;" oninput="updateEditDur()"/>
@@ -479,22 +191,69 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
   </div>
 </div>
 
-<!-- Local API client (replaces Firebase) -->
 <script>
 // ── API base ──────────────────────────────────────────────────────────────────
 const API = window.location.origin;
 
-// ── Data ──────────────────────────────────────────────────────────────────────
-const PROJECTS = {
-  academy:  {name:"Academy",  color:"#818CF8"},
-  volunteer:{name:"Volunteer",color:"#22C97A"},
-  module5:  {name:"Module 5", color:"#F5A623"},
-};
-const TAGS = ["Class Attendance","Coding","freecodecamp","general study time","HTML and CSS Tutorial","interview prep","JS tutorials","Khan Academy","online lecture","Outlining / Wireframes","WIX assignment"];
+// ── App constants — fetched from server, not hardcoded ────────────────────────
+// PROJECTS and TAGS are populated by loadConfig() before the app renders.
+let PROJECTS = {};
+let TAGS = [];
+
+async function loadConfig() {
+  try {
+    const res = await fetch(`${API}/api/config`);
+    const cfg = await res.json();
+    PROJECTS = cfg.projects;
+    TAGS     = cfg.tags;
+    buildDynamicUI();
+  } catch (e) {
+    console.error("Failed to load app config:", e);
+  }
+}
+
+// Build all the DOM nodes that depend on PROJECTS / TAGS
+function buildDynamicUI() {
+  // Sidebar project list
+  const sb = document.getElementById("sidebar-projects");
+  sb.innerHTML = Object.entries(PROJECTS).map(([,p]) =>
+    `<div class="proj-item"><span class="proj-dot" style="background:${p.color};box-shadow:0 0 5px ${p.color}80;"></span>${p.name}</div>`
+  ).join("");
+
+  // Project dropdown items
+  const projDrop = document.getElementById("proj-drop");
+  Object.entries(PROJECTS).forEach(([id, p]) => {
+    const d = document.createElement("div");
+    d.className = "ditem";
+    d.id = "proj-opt-" + id;
+    d.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0;display:inline-block;"></span>${p.name}`;
+    d.onclick = () => selectProj(id);
+    projDrop.appendChild(d);
+  });
+
+  // Edit modal project <select> options
+  const sel = document.getElementById("edit-proj");
+  Object.entries(PROJECTS).forEach(([id, p]) => {
+    const opt = document.createElement("option");
+    opt.value = id; opt.textContent = p.name;
+    sel.appendChild(opt);
+  });
+
+  // Tags dropdown
+  const tagsDrop = document.getElementById("tags-drop");
+  TAGS.forEach(t => {
+    const d = document.createElement("div");
+    d.className = "ditem";
+    d.id = "tag-opt-" + t.replace(/\s+/g, "-");
+    d.innerHTML = `<span class="check-box" id="chk-${t.replace(/\s+/g,"-")}"></span>${t}`;
+    d.onclick = e => { e.stopPropagation(); toggleTag(t); };
+    tagsDrop.appendChild(d);
+  });
+}
 
 // ── State ─────────────────────────────────────────────────────────────────────
-window.timerMode  = "timer";
-window.timerStart = null;
+window.timerMode     = "timer";
+window.timerStart    = null;
 window.timerInterval = null;
 window.selectedProj  = null;
 window.selectedTags  = [];
@@ -504,31 +263,28 @@ window.editStartDate = null;
 window.editEndDate   = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const fmt = s=>{const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60;return`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;};
-const fmtShort=s=>{const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h>0?`${h}h ${m}m`:`${m}m`;};
-const fmtTime =d=>new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-const fmtDate =d=>{const t=new Date(),y=new Date(t);y.setDate(y.getDate()-1);const dd=new Date(d);if(dd.toDateString()===t.toDateString())return"Today";if(dd.toDateString()===y.toDateString())return"Yesterday";return dd.toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});};
-const toTimeStr=d=>{const dt=new Date(d);return`${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}`;};
-const applyTimeStr=(base,ts)=>{const d=new Date(base);const[h,m]=ts.split(":").map(Number);if(!isNaN(h)&&!isNaN(m))d.setHours(h,m,0,0);return d;};
-const weekStart=()=>{const n=new Date(),ws=new Date(n);ws.setDate(n.getDate()-n.getDay());ws.setHours(0,0,0,0);return ws;};
-const $=id=>document.getElementById(id);
+const fmt      = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
+const fmtShort = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; };
+const fmtTime  = d => new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+const fmtDate  = d => { const t=new Date(),y=new Date(t); y.setDate(y.getDate()-1); const dd=new Date(d); if(dd.toDateString()===t.toDateString())return"Today"; if(dd.toDateString()===y.toDateString())return"Yesterday"; return dd.toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"}); };
+const toTimeStr    = d => { const dt=new Date(d); return `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}`; };
+const weekStart    = () => { const n=new Date(),ws=new Date(n); ws.setDate(n.getDate()-n.getDay()); ws.setHours(0,0,0,0); return ws; };
+const $            = id => document.getElementById(id);
 
-window.openSidebar=()=>{$("sidebar").classList.add("open");$("sidebar-overlay").classList.add("open");};
-window.closeSidebar=()=>{$("sidebar").classList.remove("open");$("sidebar-overlay").classList.remove("open");};
+window.openSidebar  = () => { $("sidebar").classList.add("open"); $("sidebar-overlay").classList.add("open"); };
+window.closeSidebar = () => { $("sidebar").classList.remove("open"); $("sidebar-overlay").classList.remove("open"); };
 
 // ── Auth — Google OAuth (popup flow) ─────────────────────────────────────────
 window.handleLogin = () => {
   const btn = $("google-btn");
   btn.disabled = true; btn.textContent = "Signing in…";
 
-  // Open Google OAuth in a popup (same as Firebase does)
   const popup = window.open(
     `${API}/auth/google`,
     "google_auth",
     "width=500,height=620,left=" + (screen.width/2 - 250) + ",top=" + (screen.height/2 - 310)
   );
 
-  // Listen for the postMessage from the callback page
   function onMessage(e) {
     if (e.origin !== API) return;
     if (e.data?.type !== "GOOGLE_AUTH_SUCCESS") return;
@@ -539,12 +295,10 @@ window.handleLogin = () => {
   }
   window.addEventListener("message", onMessage);
 
-  // Fallback: if popup was blocked or user closed it
   const poll = setInterval(() => {
     if (popup?.closed) {
       clearInterval(poll);
       window.removeEventListener("message", onMessage);
-      // Check if we got signed in via redirect fallback
       const stored = localStorage.getItem("tempo_user");
       if (stored) { try { onUserSignedIn(JSON.parse(stored)); return; } catch {} }
       btn.disabled = false;
@@ -564,7 +318,7 @@ window.handleSignOut = () => {
   renderEntries(); renderReports();
 };
 
-// Restore session from localStorage only — admin logout won't affect this
+// Restore session
 (function restoreSession(){
   const stored = localStorage.getItem("tempo_user");
   if (stored) { try { onUserSignedIn(JSON.parse(stored)); return; } catch {} }
@@ -573,25 +327,22 @@ window.handleSignOut = () => {
 
 function onUserSignedIn(user) {
   window.currentUser = user;
-  if(user){
-    $("login-screen").style.display="none";
-    $("app").style.display="block";
-    $("user-name-sb").textContent=user.name||"";
-    $("user-email-sb").textContent=user.email||"";
-    const wrap=$("user-avatar-wrap");
-    if(user.photo){wrap.innerHTML=`<img src="${user.photo}" class="user-avatar"/>`;}
-    else{wrap.innerHTML=`<div class="user-avatar-placeholder">${(user.name||user.email||"?")[0].toUpperCase()}</div>`;}
-    loadEntries(user);
-  }
+  $("login-screen").style.display = "none";
+  $("app").style.display = "block";
+  $("user-name-sb").textContent  = user.name  || "";
+  $("user-email-sb").textContent = user.email || "";
+  const wrap = $("user-avatar-wrap");
+  if (user.photo) { wrap.innerHTML = `<img src="${user.photo}" class="user-avatar"/>`; }
+  else { wrap.innerHTML = `<div class="user-avatar-placeholder">${(user.name||user.email||"?")[0].toUpperCase()}</div>`; }
+  loadEntries(user);
 }
 
-// ── Local API data loading ────────────────────────────────────────────────────
+// ── Data loading ──────────────────────────────────────────────────────────────
 async function loadEntries(user) {
   $("db-loading").style.display = "block";
   try {
     const res = await fetch(`${API}/api/entries?uid=${encodeURIComponent(user.id)}`);
-    const entries = await res.json();
-    window.currentEntries = entries;
+    window.currentEntries = await res.json();
     $("db-loading").style.display = "none";
     renderEntries(); renderReports(); updateTopStats();
   } catch(e) {
@@ -600,290 +351,277 @@ async function loadEntries(user) {
   }
 }
 
-window.setView=v=>{
-  $("view-tracker").style.display=v==="tracker"?"block":"none";
-  $("view-reports").style.display=v==="reports"?"block":"none";
-  $("nav-tracker").className="nav-btn"+(v==="tracker"?" on":"");
-  $("nav-reports").className="nav-btn"+(v==="reports"?" on":"");
-  $("topbar-title").textContent=v==="tracker"?"Time Tracker":"My Reports";
+window.setView = v => {
+  $("view-tracker").style.display  = v === "tracker" ? "block" : "none";
+  $("view-reports").style.display  = v === "reports" ? "block" : "none";
+  $("nav-tracker").className = "nav-btn" + (v === "tracker" ? " on" : "");
+  $("nav-reports").className = "nav-btn" + (v === "reports" ? " on" : "");
+  $("topbar-title").textContent = v === "tracker" ? "Time Tracker" : "My Reports";
   closeSidebar();
 };
 
 // ── Dropdowns ─────────────────────────────────────────────────────────────────
-window.toggleDrop=(e,id,btn)=>{
+window.toggleDrop = (e, id, btn) => {
   e.stopPropagation();
-  const drop=$(id);
-  const isOpen=drop.classList.contains("open");
-  document.querySelectorAll(".drop").forEach(d=>d.classList.remove("open"));
-  if(!isOpen){
-    const r=btn.getBoundingClientRect();
-    drop.style.top=(r.bottom+6)+"px";
-    drop.style.left=r.left+"px";
+  const drop = $(id);
+  const isOpen = drop.classList.contains("open");
+  document.querySelectorAll(".drop").forEach(d => d.classList.remove("open"));
+  if (!isOpen) {
+    const r = btn.getBoundingClientRect();
+    drop.style.top  = (r.bottom + 6) + "px";
+    drop.style.left = r.left + "px";
     drop.classList.add("open");
   }
 };
-document.addEventListener("click",()=>document.querySelectorAll(".drop").forEach(d=>d.classList.remove("open")));
+document.addEventListener("click", () => document.querySelectorAll(".drop").forEach(d => d.classList.remove("open")));
 
 // ── Project select ────────────────────────────────────────────────────────────
-window.selectProj=id=>{
-  window.selectedProj=id;
-  const chip=$("proj-chip"), txt=$("proj-chip-text");
-  if(id&&PROJECTS[id]){
-    const p=PROJECTS[id];
-    txt.textContent=p.name;
+window.selectProj = id => {
+  window.selectedProj = id;
+  const chip = $("proj-chip"), txt = $("proj-chip-text");
+  if (id && PROJECTS[id]) {
+    const p = PROJECTS[id];
+    txt.textContent = p.name;
     chip.classList.add("active");
-    chip.style.color=p.color;
-  }else{
-    txt.textContent="Project";
+    chip.style.color = p.color;
+  } else {
+    txt.textContent = "Project";
     chip.classList.remove("active");
-    chip.style.color="";
+    chip.style.color = "";
   }
-  document.querySelectorAll(".drop").forEach(d=>d.classList.remove("open"));
+  document.querySelectorAll(".drop").forEach(d => d.classList.remove("open"));
 };
 
-// ── Tags ─────────────────────────────────────────────────────────────────────
-(function buildTagsDrop(){
-  const drop=$("tags-drop");
-  TAGS.forEach(t=>{
-    const d=document.createElement("div");
-    d.className="ditem";
-    d.id="tag-opt-"+t.replace(/\s+/g,"-");
-    d.innerHTML=`<span class="check-box" id="chk-${t.replace(/\s+/g,"-")}"></span>${t}`;
-    d.onclick=e=>{e.stopPropagation();toggleTag(t);};
-    drop.appendChild(d);
-  });
-})();
-
-function toggleTag(t){
-  const idx=window.selectedTags.indexOf(t);
-  if(idx>-1)window.selectedTags.splice(idx,1);
+// ── Tags ──────────────────────────────────────────────────────────────────────
+function toggleTag(t) {
+  const idx = window.selectedTags.indexOf(t);
+  if (idx > -1) window.selectedTags.splice(idx, 1);
   else window.selectedTags.push(t);
   refreshTagsUI();
 }
-function refreshTagsUI(){
-  TAGS.forEach(t=>{
-    const chk=document.getElementById("chk-"+t.replace(/\s+/g,"-"));
-    if(chk){chk.className="check-box"+(window.selectedTags.includes(t)?" checked":"");
-      if(window.selectedTags.includes(t))chk.innerHTML='<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#0A0B0F" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg>';
-      else chk.innerHTML="";}
+function refreshTagsUI() {
+  TAGS.forEach(t => {
+    const chk = document.getElementById("chk-" + t.replace(/\s+/g, "-"));
+    if (chk) {
+      chk.className = "check-box" + (window.selectedTags.includes(t) ? " checked" : "");
+      chk.innerHTML = window.selectedTags.includes(t)
+        ? '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#0A0B0F" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg>'
+        : "";
+    }
   });
-  const chip=$("tags-chip"),txt=$("tags-chip-text");
-  if(window.selectedTags.length>0){chip.classList.add("active");txt.textContent=window.selectedTags.join(", ");}
-  else{chip.classList.remove("active");txt.textContent="Tags";}
+  const chip = $("tags-chip"), txt = $("tags-chip-text");
+  if (window.selectedTags.length > 0) { chip.classList.add("active"); txt.textContent = window.selectedTags.join(", "); }
+  else { chip.classList.remove("active"); txt.textContent = "Tags"; }
 }
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
-window.handleMainBtn=()=>{if(window.timerStart)stopTimer();else startTimer();};
-window.startTimer=()=>{
-  window.timerStart=Date.now();
+window.handleMainBtn = () => { if (window.timerStart) stopTimer(); else startTimer(); };
+window.startTimer = () => {
+  window.timerStart = Date.now();
   $("timer-card").classList.add("recording");
-  $("rec-badge").style.display="flex";
-  $("elapsed-display").style.display="flex";
-  $("main-btn").className="start-btn stop";
-  $("main-btn").innerHTML='<svg width="11" height="11" viewBox="0 0 24 24" fill="white"><rect x="3" y="3" width="18" height="18" rx="2.5"/></svg>';
-  window.timerInterval=setInterval(()=>{
-    const s=Math.floor((Date.now()-window.timerStart)/1000);
-    $("elapsed-display").textContent=fmt(s);
+  $("rec-badge").style.display = "flex";
+  $("elapsed-display").style.display = "flex";
+  $("main-btn").className = "start-btn stop";
+  $("main-btn").innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="white"><rect x="3" y="3" width="18" height="18" rx="2.5"/></svg>';
+  window.timerInterval = setInterval(() => {
+    $("elapsed-display").textContent = fmt(Math.floor((Date.now() - window.timerStart) / 1000));
     updateTopStats();
-  },1000);
+  }, 1000);
 };
-window.stopTimer=async()=>{
-  if(!window.timerStart)return;
+window.stopTimer = async () => {
+  if (!window.timerStart) return;
   clearInterval(window.timerInterval);
-  const end=new Date(),start=new Date(window.timerStart),dur=Math.floor((end-start)/1000);
-  const entryDesc=$("timer-desc").value||"Untitled";
-  const entryProj=window.selectedProj;
-  const entryTags=[...window.selectedTags];
-  // Reset UI immediately so it feels instant
-  window.timerStart=null;
+  const end = new Date(), start = new Date(window.timerStart), dur = Math.floor((end - start) / 1000);
+  const entryDesc = $("timer-desc").value || "Untitled";
+  const entryProj = window.selectedProj;
+  const entryTags = [...window.selectedTags];
+  window.timerStart = null;
   $("timer-card").classList.remove("recording");
-  $("rec-badge").style.display="none";
-  $("elapsed-display").style.display="none";
-  $("elapsed-display").textContent="";
-  $("main-btn").className="start-btn go";
-  $("main-btn").innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="#0A0B0F"><polygon points="5,3 19,12 5,21"/></svg>';
+  $("rec-badge").style.display = "none";
+  $("elapsed-display").style.display = "none";
+  $("elapsed-display").textContent = "";
+  $("main-btn").className = "start-btn go";
+  $("main-btn").innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="#0A0B0F"><polygon points="5,3 19,12 5,21"/></svg>';
   resetInputs();
-  if(dur<0)return;
-  await saveEntry({desc:entryDesc,projectId:entryProj,tags:entryTags,start,end,duration:dur});
+  if (dur < 0) return;
+  await saveEntry({ desc: entryDesc, projectId: entryProj, tags: entryTags, start, end, duration: dur });
 };
 
 // ── Manual log ────────────────────────────────────────────────────────────────
-window.logManual=async()=>{
-  const ms=$("manual-start").value,me=$("manual-end").value,md=$("manual-date").value;
-  if(!ms||!me){showTimerErr("Please set both start and end time.");return;}
-  if(!md){showTimerErr("Please select a date.");return;}
-  const start=new Date(md+"T"+ms),end=new Date(md+"T"+me);
-  const dur=Math.floor((end-start)/1000);
-  if(dur<0){showTimerErr("End time must be after start time.");return;}
-  await saveEntry({desc:$("timer-desc").value||"Untitled",projectId:window.selectedProj,tags:[...window.selectedTags],start,end,duration:dur});
+window.logManual = async () => {
+  const ms = $("manual-start").value, me = $("manual-end").value, md = $("manual-date").value;
+  if (!ms || !me) { showTimerErr("Please set both start and end time."); return; }
+  if (!md)        { showTimerErr("Please select a date."); return; }
+  const start = new Date(md + "T" + ms), end = new Date(md + "T" + me);
+  const dur = Math.floor((end - start) / 1000);
+  if (dur < 0) { showTimerErr("End time must be after start time."); return; }
+  await saveEntry({ desc: $("timer-desc").value || "Untitled", projectId: window.selectedProj, tags: [...window.selectedTags], start, end, duration: dur });
   resetInputs();
-  $("manual-start").value="";$("manual-end").value="";
-  // Reset date to today
-  $("manual-date").value=new Date().toISOString().split("T")[0];
+  $("manual-start").value = ""; $("manual-end").value = "";
+  $("manual-date").value = new Date().toISOString().split("T")[0];
 };
-function showTimerErr(msg){const el=$("timer-err");el.textContent=msg;el.style.display="block";setTimeout(()=>el.style.display="none",4000);}
+function showTimerErr(msg) { const el = $("timer-err"); el.textContent = msg; el.style.display = "block"; setTimeout(() => el.style.display = "none", 4000); }
 
-// ── Mode toggle ────────────────────────────────────────────────────────────────
-window.toggleMode=()=>{
-  const isManual=window.timerMode==="manual";
-  window.timerMode=isManual?"timer":"manual";
-  $("timer-controls-timer").style.display=isManual?"block":"none";
-  $("timer-controls-manual").style.display=isManual?"none":"flex";
-  $("mode-btn").className="mode-btn"+(isManual?"":" manual-on");
-  $("mode-icon-calendar").style.display=isManual?"block":"none";
-  $("mode-icon-clock").style.display=isManual?"none":"block";
-  $("rec-badge").style.display="none";
-  $("manual-badge").style.display=isManual?"none":"flex";
-  if(!isManual&&window.timerStart){clearInterval(window.timerInterval);window.timerStart=null;}
-  // Default manual date to today when switching to manual mode
-  if(isManual===false){
-    const today=new Date().toISOString().split("T")[0];
-    $("manual-date").value=today;
-  }
+// ── Mode toggle ───────────────────────────────────────────────────────────────
+window.toggleMode = () => {
+  const isManual = window.timerMode === "manual";
+  window.timerMode = isManual ? "timer" : "manual";
+  $("timer-controls-timer").style.display  = isManual ? "block" : "none";
+  $("timer-controls-manual").style.display = isManual ? "none" : "flex";
+  $("mode-btn").className = "mode-btn" + (isManual ? "" : " manual-on");
+  $("mode-icon-calendar").style.display = isManual ? "block" : "none";
+  $("mode-icon-clock").style.display    = isManual ? "none"  : "block";
+  $("rec-badge").style.display    = "none";
+  $("manual-badge").style.display = isManual ? "none" : "flex";
+  if (!isManual && window.timerStart) { clearInterval(window.timerInterval); window.timerStart = null; }
+  if (!isManual) $("manual-date").value = new Date().toISOString().split("T")[0];
 };
 
-// ── API save/update/delete ────────────────────────────────────────────────────
-async function saveEntry(e){
-  if(!window.currentUser)return;
-  try{
+// ── API save / delete ─────────────────────────────────────────────────────────
+async function saveEntry(e) {
+  if (!window.currentUser) return;
+  try {
     const res = await fetch(`${API}/api/entries`, {
-      method:"POST", headers:{"Content-Type":"application/json"},
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...e, uid:window.currentUser.id,
-        email:window.currentUser.email, userName:window.currentUser.name,
-        start:new Date(e.start).toISOString(), end:new Date(e.end).toISOString(),
+        ...e, uid: window.currentUser.id,
+        email: window.currentUser.email, userName: window.currentUser.name,
+        start: new Date(e.start).toISOString(), end: new Date(e.end).toISOString(),
       }),
     });
-    if(!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(await res.text());
     const saved = await res.json();
     window.currentEntries.unshift(saved);
-    window.currentEntries.sort((a,b)=>new Date(b.start)-new Date(a.start));
+    window.currentEntries.sort((a, b) => new Date(b.start) - new Date(a.start));
     renderEntries(); renderReports(); updateTopStats();
-  }catch(err){
-    console.error("Failed to save entry:",err);
+  } catch(err) {
+    console.error("Failed to save entry:", err);
     alert("Failed to save entry. Make sure the server is running.");
   }
 }
 
-window.deleteEntry=async id=>{
-  if(!confirm("Delete this entry?"))return;
-  try{
-    await fetch(`${API}/api/entries/${id}?uid=${window.currentUser.id}`,{method:"DELETE"});
-    window.currentEntries=window.currentEntries.filter(e=>e.id!==id);
+window.deleteEntry = async id => {
+  if (!confirm("Delete this entry?")) return;
+  try {
+    await fetch(`${API}/api/entries/${id}?uid=${window.currentUser.id}`, { method: "DELETE" });
+    window.currentEntries = window.currentEntries.filter(e => e.id !== id);
     renderEntries(); renderReports(); updateTopStats();
-  }catch(err){console.error("Failed to delete:",err);}
+  } catch(err) { console.error("Failed to delete:", err); }
 };
 
 // ── Edit modal ────────────────────────────────────────────────────────────────
-window.openEdit=entry=>{
-  $("edit-id").value=entry.id;
-  $("edit-desc").value=entry.desc||"";
-  $("edit-proj").value=entry.projectId||"";
-  const startDate=new Date(entry.start);
-  const endDate=new Date(entry.end);
-  window.editStartDate=startDate;
-  window.editEndDate=endDate;
-  // Populate date (use start date)
-  $("edit-date").value=startDate.toISOString().split("T")[0];
-  $("edit-start").value=toTimeStr(entry.start);
-  $("edit-end").value=toTimeStr(entry.end);
-  $("edit-time-err").style.display="none";
+window.openEdit = entry => {
+  $("edit-id").value   = entry.id;
+  $("edit-desc").value = entry.desc || "";
+  $("edit-proj").value = entry.projectId || "";
+  const startDate = new Date(entry.start), endDate = new Date(entry.end);
+  window.editStartDate = startDate; window.editEndDate = endDate;
+  $("edit-date").value  = startDate.toISOString().split("T")[0];
+  $("edit-start").value = toTimeStr(entry.start);
+  $("edit-end").value   = toTimeStr(entry.end);
+  $("edit-time-err").style.display = "none";
   updateEditDur();
-  // Tags
-  const wrap=$("edit-tags-wrap"); wrap.innerHTML="";
-  TAGS.forEach(t=>{
-    const b=document.createElement("button");
-    b.className="tag-toggle edit-tag-toggle"+(entry.tags?.includes(t)?" on":"");
-    b.dataset.tag=t; b.textContent=t;
-    b.onclick=()=>{b.classList.toggle("on");};
+  const wrap = $("edit-tags-wrap"); wrap.innerHTML = "";
+  TAGS.forEach(t => {
+    const b = document.createElement("button");
+    b.className = "tag-toggle edit-tag-toggle" + (entry.tags?.includes(t) ? " on" : "");
+    b.dataset.tag = t; b.textContent = t;
+    b.onclick = () => b.classList.toggle("on");
     wrap.appendChild(b);
   });
   $("edit-modal").classList.add("open");
 };
-window.closeModal=()=>{$("edit-modal").classList.remove("open");};
-window.updateEditDur=()=>{
-  const dateVal=$("edit-date").value;
-  const startVal=$("edit-start").value;
-  const endVal=$("edit-end").value;
-  if(!dateVal||!startVal||!endVal){$("edit-dur-display").textContent="--:--:--";return;}
-  const s=new Date(dateVal+"T"+startVal);
-  const e=new Date(dateVal+"T"+endVal);
-  const dur=Math.floor((e-s)/1000);
-  const el=$("edit-dur-display");
-  el.textContent=dur>=0?fmt(dur):"--:--:--";
-  el.style.color=dur>=0?"var(--accent)":"var(--red)";
+window.closeModal = () => $("edit-modal").classList.remove("open");
+window.updateEditDur = () => {
+  const dateVal = $("edit-date").value, startVal = $("edit-start").value, endVal = $("edit-end").value;
+  if (!dateVal || !startVal || !endVal) { $("edit-dur-display").textContent = "--:--:--"; return; }
+  const s = new Date(dateVal + "T" + startVal), e = new Date(dateVal + "T" + endVal);
+  const dur = Math.floor((e - s) / 1000);
+  const el = $("edit-dur-display");
+  el.textContent = dur >= 0 ? fmt(dur) : "--:--:--";
+  el.style.color = dur >= 0 ? "var(--accent)" : "var(--red)";
 };
-window.saveEdit=async()=>{
-  const id=$("edit-id").value;
-  const dateVal=$("edit-date").value;
-  const startVal=$("edit-start").value;
-  const endVal=$("edit-end").value;
-  if(!dateVal){$("edit-time-err").textContent="Please select a date.";$("edit-time-err").style.display="block";return;}
-  if(!startVal||!endVal){$("edit-time-err").textContent="Please set start and end time.";$("edit-time-err").style.display="block";return;}
-  const newStart=new Date(dateVal+"T"+startVal);
-  const newEnd=new Date(dateVal+"T"+endVal);
-  const dur=Math.floor((newEnd-newStart)/1000);
-  if(dur<0){$("edit-time-err").textContent="End must be after start.";$("edit-time-err").style.display="block";return;}
-  const tags=[...document.querySelectorAll(".edit-tag-toggle.on")].map(b=>b.dataset.tag);
-  try{
-    const res = await fetch(`${API}/api/entries/${id}`,{
-      method:"PATCH", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        uid:window.currentUser.id,
-        desc:$("edit-desc").value, projectId:$("edit-proj").value||null, tags,
-        start:newStart.toISOString(), end:newEnd.toISOString(), duration:dur,
-      }),
+window.saveEdit = async () => {
+  const id = $("edit-id").value, dateVal = $("edit-date").value, startVal = $("edit-start").value, endVal = $("edit-end").value;
+  if (!dateVal) { $("edit-time-err").textContent = "Please select a date."; $("edit-time-err").style.display = "block"; return; }
+  if (!startVal || !endVal) { $("edit-time-err").textContent = "Please set start and end time."; $("edit-time-err").style.display = "block"; return; }
+  const newStart = new Date(dateVal + "T" + startVal), newEnd = new Date(dateVal + "T" + endVal);
+  const dur = Math.floor((newEnd - newStart) / 1000);
+  if (dur < 0) { $("edit-time-err").textContent = "End must be after start."; $("edit-time-err").style.display = "block"; return; }
+  const tags = [...document.querySelectorAll(".edit-tag-toggle.on")].map(b => b.dataset.tag);
+  try {
+    const res = await fetch(`${API}/api/entries/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid: window.currentUser.id, desc: $("edit-desc").value, projectId: $("edit-proj").value || null, tags, start: newStart.toISOString(), end: newEnd.toISOString(), duration: dur }),
     });
-    if(!res.ok)throw new Error(await res.text());
+    if (!res.ok) throw new Error(await res.text());
     const updated = await res.json();
-    const idx = window.currentEntries.findIndex(e=>e.id===id);
-    if(idx!==-1) window.currentEntries[idx]=updated;
-    window.currentEntries.sort((a,b)=>new Date(b.start)-new Date(a.start));
+    const idx = window.currentEntries.findIndex(e => e.id === id);
+    if (idx !== -1) window.currentEntries[idx] = updated;
+    window.currentEntries.sort((a, b) => new Date(b.start) - new Date(a.start));
     renderEntries(); renderReports(); updateTopStats();
     closeModal();
-  }catch(err){
-    console.error("Failed to save edit:",err);
-    alert("Failed to save. Make sure the server is running.");
-  }
+  } catch(err) { console.error("Failed to save edit:", err); alert("Failed to save. Make sure the server is running."); }
 };
-$("edit-modal").addEventListener("click",e=>{if(e.target===$("edit-modal"))closeModal();});
+$("edit-modal").addEventListener("click", e => { if (e.target === $("edit-modal")) closeModal(); });
 
 // ── Expanded entry groups state ───────────────────────────────────────────────
 window.expandedGroups = new Set();
+function groupKey(e) { return (e.desc || "Untitled") + "||" + (e.projectId || ""); }
 
-function groupKey(e){ return (e.desc||"Untitled") + "||" + (e.projectId||""); }
+// ── Resume entry ──────────────────────────────────────────────────────────────
+window.resumeEntry = entry => {
+  if (window.timerStart) {
+    if (!confirm("Stop the current timer and resume this entry?")) return;
+    clearInterval(window.timerInterval);
+    window.timerStart = null;
+    $("timer-card").classList.remove("recording");
+    $("rec-badge").style.display = "none";
+    $("elapsed-display").style.display = "none";
+    $("main-btn").className = "start-btn go";
+    $("main-btn").innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="#0A0B0F"><polygon points="5,3 19,12 5,21"/></svg>';
+  }
+  if (window.timerMode === "manual") {
+    window.timerMode = "timer";
+    $("timer-controls-timer").style.display  = "block";
+    $("timer-controls-manual").style.display = "none";
+    $("mode-btn").className = "mode-btn";
+    $("mode-icon-calendar").style.display = "block";
+    $("mode-icon-clock").style.display    = "none";
+    $("manual-badge").style.display = "none";
+  }
+  $("timer-desc").value = entry.desc || "";
+  selectProj(entry.projectId || null);
+  window.selectedTags = entry.tags ? [...entry.tags] : [];
+  refreshTagsUI();
+  $("timer-desc").focus();
+  startTimer();
+};
 
-function renderEntries(){
-  const entries=window.currentEntries;
-  const list=$("entry-list"),empty=$("empty-state");
-  if(entries.length===0){list.innerHTML="";empty.style.display="block";return;}
-  empty.style.display="none";
+// ── Render entries ────────────────────────────────────────────────────────────
+function renderEntries() {
+  const entries = window.currentEntries;
+  const list = $("entry-list"), empty = $("empty-state");
+  if (entries.length === 0) { list.innerHTML = ""; empty.style.display = "block"; return; }
+  empty.style.display = "none";
 
-  // Group by day first
-  const dayGroups={};
-  entries.forEach(e=>{const k=fmtDate(e.start);if(!dayGroups[k])dayGroups[k]=[];dayGroups[k].push(e);});
+  const dayGroups = {};
+  entries.forEach(e => { const k = fmtDate(e.start); if (!dayGroups[k]) dayGroups[k] = []; dayGroups[k].push(e); });
 
-  list.innerHTML=Object.entries(dayGroups).map(([date,dayEntries])=>{
-    const dayTotal=dayEntries.reduce((s,e)=>s+e.duration,0);
+  list.innerHTML = Object.entries(dayGroups).map(([date, dayEntries]) => {
+    const dayTotal = dayEntries.reduce((s, e) => s + e.duration, 0);
+    const subGroups = {};
+    dayEntries.forEach(e => { const k = groupKey(e); if (!subGroups[k]) subGroups[k] = []; subGroups[k].push(e); });
 
-    // Within each day, group by desc+project
-    const subGroups={};
-    dayEntries.forEach(e=>{
-      const k=groupKey(e);
-      if(!subGroups[k])subGroups[k]=[];
-      subGroups[k].push(e);
-    });
+    const rowsHtml = Object.entries(subGroups).map(([gk, groupEntries]) => {
+      const first    = groupEntries[0];
+      const p        = first.projectId ? PROJECTS[first.projectId] : null;
+      const totalDur = groupEntries.reduce((s, e) => s + e.duration, 0);
+      const isExpanded  = window.expandedGroups.has(date + "||" + gk);
+      const hasMultiple = groupEntries.length > 1;
+      const safeGk = encodeURIComponent(date + "||" + gk);
 
-    const rowsHtml=Object.entries(subGroups).map(([gk,groupEntries])=>{
-      const first=groupEntries[0];
-      const p=first.projectId?PROJECTS[first.projectId]:null;
-      const totalDur=groupEntries.reduce((s,e)=>s+e.duration,0);
-      const isExpanded=window.expandedGroups.has(date+"||"+gk);
-      const hasMultiple=groupEntries.length>1;
-      const safeGk=encodeURIComponent(date+"||"+gk);
-
-      // Sub-rows (individual time segments)
-      const subRowsHtml=groupEntries.map(e=>`
+      const subRowsHtml = groupEntries.map(e => `
         <div style="display:flex;align-items:center;gap:12px;padding:8px 18px 8px 42px;border-top:1px solid var(--border);background:var(--bg0);">
           <div class="mono" style="font-size:12px;color:var(--t2);flex:1;">${fmtTime(e.start)} — ${fmtTime(e.end)}</div>
           <div class="mono" style="font-size:12px;color:var(--t1);min-width:72px;text-align:right;">${fmt(e.duration)}</div>
@@ -897,7 +635,7 @@ function renderEntries(){
           </div>
         </div>`).join("");
 
-      return`
+      return `
         <div>
           <div class="entry-row" style="cursor:${hasMultiple?"pointer":"default"};" onclick="timeLogClicked(${JSON.stringify(first).replace(/"/g,"&quot;")}); ${hasMultiple?`toggleGroup('${safeGk}')`:``}">
             <div class="entry-bar" style="background:${p?p.color:"var(--bg4)"}"></div>
@@ -915,8 +653,7 @@ function renderEntries(){
             ${!hasMultiple?`<div class="entry-time mono">${fmtTime(first.start)} — ${fmtTime(first.end)}</div>`:""}
             <div class="entry-dur mono">${fmt(totalDur)}</div>
             <div class="row-acts" style="display:flex;gap:2px;">
-              <!-- Resume button -->
-              <button class="ib" onclick="event.stopPropagation();resumeEntry(${JSON.stringify(first).replace(/"/g,"&quot;")})" title="Resume — start timer with this entry">
+              <button class="ib" onclick="event.stopPropagation();resumeEntry(${JSON.stringify(first).replace(/"/g,"&quot;")})" title="Resume">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5,3 19,12 5,21" fill="currentColor" stroke="none"/></svg>
               </button>
               ${!hasMultiple?`
@@ -936,7 +673,7 @@ function renderEntries(){
         </div>`;
     }).join("");
 
-    return`<div class="fadeIn">
+    return `<div class="fadeIn">
       <div class="day-header">
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="day-label">${date}</span>
@@ -949,100 +686,75 @@ function renderEntries(){
   }).join("");
 }
 
-window.toggleGroup=safeGk=>{
-  const gk=decodeURIComponent(safeGk);
-  if(window.expandedGroups.has(gk))window.expandedGroups.delete(gk);
+window.toggleGroup = safeGk => {
+  const gk = decodeURIComponent(safeGk);
+  if (window.expandedGroups.has(gk)) window.expandedGroups.delete(gk);
   else window.expandedGroups.add(gk);
   renderEntries();
 };
 
-window.resumeEntry=entry=>{
-  // If timer is running, stop it first
-  if(window.timerStart){
-    if(!confirm("Stop the current timer and resume this entry?"))return;
-    clearInterval(window.timerInterval);
-    window.timerStart=null;
-    $("timer-card").classList.remove("recording");
-    $("rec-badge").style.display="none";
-    $("elapsed-display").style.display="none";
-    $("main-btn").className="start-btn go";
-    $("main-btn").innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="#0A0B0F"><polygon points="5,3 19,12 5,21"/></svg>';
-  }
-  // Switch to timer mode if in manual
-  if(window.timerMode==="manual"){
-    window.timerMode="timer";
-    $("timer-controls-timer").style.display="block";
-    $("timer-controls-manual").style.display="none";
-    $("mode-btn").className="mode-btn";
-    $("mode-icon-calendar").style.display="block";
-    $("mode-icon-clock").style.display="none";
-    $("manual-badge").style.display="none";
-  }
-  // Pre-fill description, project, tags
-  $("timer-desc").value=entry.desc||"";
-  selectProj(entry.projectId||null);
-  window.selectedTags=entry.tags?[...entry.tags]:[];
-  refreshTagsUI();
-  // Scroll to top and start
-  $("timer-desc").focus();
-  startTimer();
-};
+// timeLogClicked kept for onclick compatibility (no-op when hasMultiple handles it)
+window.timeLogClicked = () => {};
 
 // ── Top stats ─────────────────────────────────────────────────────────────────
-function updateTopStats(){
-  const entries=window.currentEntries;
-  const ws=weekStart();
-  const liveExtra=window.timerStart?Math.floor((Date.now()-window.timerStart)/1000):0;
-  const todayBase=entries.filter(e=>new Date(e.start).toDateString()===new Date().toDateString()).reduce((s,e)=>s+e.duration,0);
-  const weekBase=entries.filter(e=>new Date(e.start)>=ws).reduce((s,e)=>s+e.duration,0);
-  $("stat-today").textContent=fmt(todayBase+liveExtra);
-  $("stat-week").textContent=fmt(weekBase+liveExtra);
+function updateTopStats() {
+  const entries = window.currentEntries;
+  const ws = weekStart();
+  const liveExtra = window.timerStart ? Math.floor((Date.now() - window.timerStart) / 1000) : 0;
+  const todayBase = entries.filter(e => new Date(e.start).toDateString() === new Date().toDateString()).reduce((s, e) => s + e.duration, 0);
+  const weekBase  = entries.filter(e => new Date(e.start) >= ws).reduce((s, e) => s + e.duration, 0);
+  $("stat-today").textContent = fmt(todayBase + liveExtra);
+  $("stat-week").textContent  = fmt(weekBase  + liveExtra);
 }
 
 // ── Reports ───────────────────────────────────────────────────────────────────
-function renderReports(){
-  const entries=window.currentEntries;
-  const totalAll=entries.reduce((s,e)=>s+e.duration,0);
-  const uniqueDays=Object.keys(entries.reduce((a,e)=>{a[new Date(e.start).toDateString()]=1;return a},{})).length;
-  const byProj=Object.entries(PROJECTS).map(([id,p])=>({id,...p,
-    total:entries.filter(e=>e.projectId===id).reduce((s,e)=>s+e.duration,0),
-    count:entries.filter(e=>e.projectId===id).length,
-  })).filter(p=>p.total>0).sort((a,b)=>b.total-a.total);
-  const grand=byProj.reduce((s,p)=>s+p.total,0);
+function renderReports() {
+  const entries  = window.currentEntries;
+  const totalAll = entries.reduce((s, e) => s + e.duration, 0);
+  const uniqueDays = Object.keys(entries.reduce((a, e) => { a[new Date(e.start).toDateString()] = 1; return a; }, {})).length;
+  const byProj = Object.entries(PROJECTS).map(([id, p]) => ({
+    id, ...p,
+    total: entries.filter(e => e.projectId === id).reduce((s, e) => s + e.duration, 0),
+    count: entries.filter(e => e.projectId === id).length,
+  })).filter(p => p.total > 0).sort((a, b) => b.total - a.total);
+  const grand = byProj.reduce((s, p) => s + p.total, 0);
 
-  $("r-total").textContent=fmt(totalAll);
-  $("r-entries").textContent=`${entries.length} entries`;
-  $("r-projects").textContent=byProj.length;
-  $("r-avg").textContent=fmtShort(Math.round(totalAll/Math.max(1,uniqueDays)));
-  $("r-grand").textContent=fmt(grand)+" total";
+  $("r-total").textContent    = fmt(totalAll);
+  $("r-entries").textContent  = `${entries.length} entries`;
+  $("r-projects").textContent = byProj.length;
+  $("r-avg").textContent      = fmtShort(Math.round(totalAll / Math.max(1, uniqueDays)));
+  $("r-grand").textContent    = fmt(grand) + " total";
 
-  $("r-proj-rows").innerHTML=byProj.length===0
-    ?`<div style="padding:48px;text-align:center;color:var(--t2);font-size:13px;">No data yet</div>`
-    :byProj.map(p=>{
-      const pct=grand>0?(p.total/grand)*100:0;
-      return`<div class="proj-row">
-        <div class="proj-row-top">
-          <div class="proj-row-left">
-            <span class="proj-glow-dot" style="background:${p.color};box-shadow:0 0 7px ${p.color}90;"></span>
-            <span class="proj-name">${p.name}</span>
-            <span class="proj-count">${p.count} ${p.count===1?"entry":"entries"}</span>
+  $("r-proj-rows").innerHTML = byProj.length === 0
+    ? `<div style="padding:48px;text-align:center;color:var(--t2);font-size:13px;">No data yet</div>`
+    : byProj.map(p => {
+        const pct = grand > 0 ? (p.total / grand) * 100 : 0;
+        return `<div class="proj-row">
+          <div class="proj-row-top">
+            <div class="proj-row-left">
+              <span class="proj-glow-dot" style="background:${p.color};box-shadow:0 0 7px ${p.color}90;"></span>
+              <span class="proj-name">${p.name}</span>
+              <span class="proj-count">${p.count} ${p.count===1?"entry":"entries"}</span>
+            </div>
+            <div class="proj-row-right">
+              <span class="proj-pct">${Math.round(pct)}%</span>
+              <span class="proj-dur mono">${fmt(p.total)}</span>
+            </div>
           </div>
-          <div class="proj-row-right">
-            <span class="proj-pct">${Math.round(pct)}%</span>
-            <span class="proj-dur mono">${fmt(p.total)}</span>
-          </div>
-        </div>
-        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${p.color};box-shadow:0 0 8px ${p.color}60;"></div></div>
-      </div>`;
-    }).join("");
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${p.color};box-shadow:0 0 8px ${p.color}60;"></div></div>
+        </div>`;
+      }).join("");
 }
 
 // ── Reset inputs ──────────────────────────────────────────────────────────────
-function resetInputs(){
-  $("timer-desc").value="";
-  window.selectedProj=null; window.selectedTags=[];
+function resetInputs() {
+  $("timer-desc").value = "";
+  window.selectedProj = null; window.selectedTags = [];
   selectProj(null); refreshTagsUI();
 }
+
+// ── Boot: load config first, then restore any existing session ────────────────
+loadConfig();
 </script>
 </body>
 </html>

@@ -102,7 +102,6 @@
   .c-volunteer{color:#22C97A;} .bg-volunteer{background:rgba(34,201,122,.15);border-color:rgba(34,201,122,.4);}
   .c-module5{color:#F5A623;} .bg-module5{background:rgba(245,166,35,.15);border-color:rgba(245,166,35,.4);}
 
-  /* ── Tablet (≤900px) ── */
   @media(max-width:900px){
     .stats-bar{grid-template-columns:repeat(2,1fr);padding:16px 16px 0;}
     .controls{padding:14px 16px;flex-wrap:wrap;}
@@ -110,12 +109,10 @@
     .table-wrap{padding:0 16px 24px;}
     header{padding:0 16px;}
     .student-stats{gap:12px;}
-    .sstats-item:nth-child(-n+3){display:none;} /* hide project breakdown cols, keep total+entries */
+    .sstats-item:nth-child(-n+3){display:none;}
     .entry-time{min-width:90px;}
     .entry-dur{min-width:58px;}
   }
-
-  /* ── Mobile (≤600px) ── */
   @media(max-width:600px){
     .login-card{width:calc(100vw - 32px);padding:28px 24px;}
     .stats-bar{grid-template-columns:repeat(2,1fr);gap:10px;padding:12px 12px 0;}
@@ -129,22 +126,11 @@
     .admin-chip{display:none;}
     .last-updated-wrap{display:none;}
     .signout-btn{padding:5px 10px;font-size:11px;}
-
-    /* Student card header stacks avatar+info on top, stats below */
     .student-header{flex-wrap:wrap;gap:10px;padding:12px 14px;}
     .student-info{flex:1;}
-    .student-stats{
-      width:100%;
-      border-top:1px solid var(--border);
-      padding-top:10px;
-      margin-top:2px;
-      justify-content:flex-start;
-      gap:16px;
-    }
+    .student-stats{width:100%;border-top:1px solid var(--border);padding-top:10px;margin-top:2px;justify-content:flex-start;gap:16px;}
     .sstats-item{display:block !important;text-align:left;}
     .chevron{align-self:flex-start;margin-top:4px;}
-
-    /* Entry rows: stack desc above time */
     .entry-row{flex-wrap:wrap;gap:6px;padding:10px 12px;}
     .entry-dot{height:20px;align-self:flex-start;margin-top:3px;}
     .entry-desc{flex:1 1 calc(100% - 20px);}
@@ -187,7 +173,7 @@
     </div>
     <div class="header-right">
       <div class="last-updated-wrap"><span id="last-updated" style="font-size:11px;color:var(--t2);"></span></div>
-      <span class="admin-chip" id="admin-email"></span>
+      <span class="admin-chip" id="admin-label">Admin</span>
       <button class="signout-btn" onclick="signOutAdmin()">Sign out</button>
     </div>
   </header>
@@ -202,15 +188,13 @@
   <div class="controls">
     <div class="search-wrap">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" placeholder="Search students…" id="search-input" oninput="renderStudents()"/>
+      <input type="text" placeholder="Search students…" id="search-input" oninput="debouncedLoad()"/>
     </div>
-    <select class="filter-select" id="proj-filter" onchange="renderStudents()">
+    <!-- Project filter options injected from /api/config -->
+    <select class="filter-select" id="proj-filter" onchange="loadData()">
       <option value="">All projects</option>
-      <option value="academy">Academy</option>
-      <option value="volunteer">Volunteer</option>
-      <option value="module5">Module 5</option>
     </select>
-    <select class="filter-select" id="week-filter" onchange="renderStudents()">
+    <select class="filter-select" id="week-filter" onchange="loadData()">
       <option value="week">This week</option>
       <option value="all">All time</option>
     </select>
@@ -222,29 +206,41 @@
 </div>
 
 <script>
-// ── API base ──────────────────────────────────────────────────────────────────
 const API = window.location.origin;
 
-const PROJECTS = {
-  academy:  { name:"Academy",   color:"#818CF8", cls:"academy"  },
-  volunteer:{ name:"Volunteer", color:"#22C97A", cls:"volunteer" },
-  module5:  { name:"Module 5",  color:"#F5A623", cls:"module5"  },
-};
+// ── App constants — fetched from /api/config ──────────────────────────────────
+let PROJECTS = {};
 
+async function loadConfig() {
+  try {
+    const res = await fetch(`${API}/api/config`);
+    const cfg = await res.json();
+    PROJECTS = cfg.projects;
+
+    // Populate project filter <select>
+    const sel = document.getElementById("proj-filter");
+    Object.entries(PROJECTS).forEach(([id, p]) => {
+      const opt = document.createElement("option");
+      opt.value = id; opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    console.error("Failed to load config:", e);
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt          = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
 const fmtShort     = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; };
 const fmtTime      = d => new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
 const fmtDateShort = d => new Date(d).toLocaleDateString([],{month:"short",day:"numeric"});
-const weekStart    = () => { const n=new Date(),ws=new Date(n); ws.setDate(n.getDate()-n.getDay()); ws.setHours(0,0,0,0); return ws; };
 const initials     = name => (name||"?").split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase();
 const COLORS       = ["#818CF8","#22C97A","#F5A623","#38BDF8","#F472B6","#FB923C","#A78BFA","#34D399"];
 const userColor    = email => COLORS[Math.abs([...email].reduce((a,c)=>a+c.charCodeAt(0),0))%COLORS.length];
 
-let allEntries    = [];
 let expandedUsers = new Set();
-let adminPassword = "";
 
-// ── Login ─────────────────────────────────────────────────────────────────────
+// ── Login — now sets a server-side session cookie ─────────────────────────────
 window.tryLogin = async () => {
   const pw  = document.getElementById("pw-input").value;
   const err = document.getElementById("pw-err");
@@ -253,133 +249,109 @@ window.tryLogin = async () => {
   err.textContent = "";
   if (!pw) { err.textContent = "Please enter the admin password."; return; }
 
-  btn.disabled    = true;
-  btn.textContent = "Signing in…";
+  btn.disabled = true; btn.textContent = "Signing in…";
 
   try {
     const res = await fetch(`${API}/api/auth/admin`, {
-      method: "POST", headers: {"Content-Type":"application/json"},
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: pw }),
     });
     if (!res.ok) throw new Error("wrong");
-    adminPassword = pw;
-    sessionStorage.setItem("tempo_admin_pw", pw);
-    document.getElementById("login-screen").style.display = "none";
-    document.getElementById("app").style.display          = "flex";
-    document.getElementById("admin-email").textContent    = "Admin";
-    document.getElementById("last-updated").textContent   = "";
-    loadAllEntries();
+    showApp();
   } catch (e) {
     err.textContent = "Incorrect password. Try again.";
-    btn.disabled    = false;
-    btn.textContent = "Sign in";
+    btn.disabled = false; btn.textContent = "Sign in";
     document.getElementById("pw-input").value = "";
   }
 };
 
-window.signOutAdmin = () => {
-  sessionStorage.removeItem("tempo_admin_pw");
-  adminPassword = "";
-  allEntries = [];
+window.signOutAdmin = async () => {
+  await fetch(`${API}/api/auth/admin/logout`, { method: "POST" });
   document.getElementById("login-screen").style.display = "flex";
   document.getElementById("app").style.display          = "none";
 };
 
-// Auto-restore admin session
-(function() {
-  const stored = sessionStorage.getItem("tempo_admin_pw");
-  if (stored) {
-    adminPassword = stored;
-    fetch(`${API}/api/auth/admin`, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ password: stored }),
-    }).then(r => {
-      if (r.ok) {
-        document.getElementById("login-screen").style.display = "none";
-        document.getElementById("app").style.display          = "flex";
-        document.getElementById("admin-email").textContent    = "Admin";
-        loadAllEntries();
-      } else {
-        sessionStorage.removeItem("tempo_admin_pw");
-      }
-    }).catch(() => {});
-  }
+function showApp() {
+  document.getElementById("login-screen").style.display = "none";
+  document.getElementById("app").style.display          = "flex";
+  loadData();
+}
+
+// Auto-restore: check if session is still valid on load
+(async function checkSession() {
+  try {
+    const res = await fetch(`${API}/api/auth/admin/check`);
+    const { ok } = await res.json();
+    if (ok) showApp();
+  } catch {}
 })();
 
-// ── Load all entries ──────────────────────────────────────────────────────────
-async function loadAllEntries() {
-  document.getElementById("student-list").innerHTML = '<div class="loading">Loading student data…</div>';
+// ── Data loading — all aggregation happens server-side ────────────────────────
+async function loadStats() {
   try {
-    const res = await fetch(`${API}/api/admin/entries?adminPassword=${encodeURIComponent(adminPassword)}`);
+    const res = await fetch(`${API}/api/admin/stats`);
     if (!res.ok) { signOutAdmin(); return; }
-    allEntries = await res.json();
+    const s = await res.json();
+    document.getElementById("stat-students").textContent = s.totalStudents;
+    document.getElementById("stat-week").textContent     = fmtShort(s.weekSeconds);
+    document.getElementById("stat-entries").textContent  = s.totalEntries;
+    document.getElementById("stat-avg").textContent      = fmtShort(s.avgWeekSeconds);
+  } catch (e) { console.error("Failed to load stats:", e); }
+}
+
+async function loadStudents() {
+  const search  = document.getElementById("search-input").value;
+  const project = document.getElementById("proj-filter").value;
+  const period  = document.getElementById("week-filter").value;
+
+  const params = new URLSearchParams({ project, period, search });
+  try {
+    const res = await fetch(`${API}/api/admin/students?${params}`);
+    if (!res.ok) { signOutAdmin(); return; }
+    const students = await res.json();
+    renderStudents(students, period);
     document.getElementById("last-updated").textContent =
       "Updated " + new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-    updateStats();
-    renderStudents();
-  } catch(e) {
-    console.error("Failed to load entries:", e);
+  } catch (e) {
+    console.error("Failed to load students:", e);
     document.getElementById("student-list").innerHTML = '<div class="loading">Failed to load. Is the server running?</div>';
   }
 }
 
-// Auto-refresh every 30s when admin is logged in
-setInterval(() => { if (adminPassword) loadAllEntries(); }, 30000);
-
-// ── Stats (client-side — fine at classroom scale) ─────────────────────────────
-function updateStats() {
-  const ws           = weekStart();
-  const weekEntries  = allEntries.filter(e => new Date(e.start) >= ws);
-  const users        = [...new Set(allEntries.map(e=>e.uid))];
-  const activeWeek   = [...new Set(weekEntries.map(e=>e.uid))];
-  const weekSecs     = weekEntries.reduce((s,e)=>s+e.duration,0);
-  const avgSecs      = activeWeek.length > 0 ? Math.round(weekSecs / activeWeek.length) : 0;
-
-  document.getElementById("stat-students").textContent = users.length;
-  document.getElementById("stat-week").textContent     = fmtShort(weekSecs);
-  document.getElementById("stat-entries").textContent  = allEntries.length;
-  document.getElementById("stat-avg").textContent      = fmtShort(avgSecs);
+function loadData() {
+  loadStats();
+  loadStudents();
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
-window.renderStudents = () => {
-  const search = document.getElementById("search-input").value.toLowerCase();
-  const projF  = document.getElementById("proj-filter").value;
-  const weekF  = document.getElementById("week-filter").value;
-  const ws     = weekStart();
+// Debounce search input so we don't fire on every keystroke
+let searchTimer;
+function debouncedLoad() { clearTimeout(searchTimer); searchTimer = setTimeout(loadStudents, 250); }
 
-  const byUser = {};
-  allEntries.forEach(e => {
-    if (!byUser[e.uid]) byUser[e.uid] = { uid:e.uid, email:e.email||"", name:e.userName||e.email||"Unknown", entries:[] };
-    byUser[e.uid].entries.push(e);
-  });
+// Auto-refresh every 30 s
+setInterval(() => {
+  // Only refresh if the app panel is visible
+  if (document.getElementById("app").style.display !== "none") loadData();
+}, 30000);
 
-  let users = Object.values(byUser);
-  if (search) users = users.filter(u => u.name.toLowerCase().includes(search) || u.email.toLowerCase().includes(search));
-  if (projF)  users = users.filter(u => u.entries.some(e=>e.projectId===projF));
-  users.sort((a,b) => {
-    const sumW = u => u.entries.filter(e=>new Date(e.start)>=ws).reduce((s,e)=>s+e.duration,0);
-    return sumW(b)-sumW(a);
-  });
-
-  if (users.length===0) {
-    document.getElementById("student-list").innerHTML = `<div class="loading">No students found.</div>`;
+// ── Render — pure presentation, no aggregation ────────────────────────────────
+function renderStudents(students, period) {
+  if (students.length === 0) {
+    document.getElementById("student-list").innerHTML = '<div class="loading">No students found.</div>';
     return;
   }
 
-  document.getElementById("student-list").innerHTML = users.map(u => {
-    const relevantEntries = weekF==="week" ? u.entries.filter(e=>new Date(e.start)>=ws) : u.entries;
-    const filteredEntries = projF ? relevantEntries.filter(e=>e.projectId===projF) : relevantEntries;
-    const totalSecs  = filteredEntries.reduce((s,e)=>s+e.duration,0);
-    const totalCount = filteredEntries.length;
-    const isOpen     = expandedUsers.has(u.uid);
-    const col        = userColor(u.email);
+  document.getElementById("student-list").innerHTML = students.map(u => {
+    const isOpen = expandedUsers.has(u.uid);
+    const col    = userColor(u.email);
 
-    const projBreakdown = Object.entries(
-      filteredEntries.reduce((a,e)=>{ if(e.projectId){a[e.projectId]=(a[e.projectId]||0)+e.duration;} return a; },{})
-    ).sort((a,b)=>b[1]-a[1]);
+    const projBreakdownHtml = u.projBreakdown.length > 0
+      ? `<div class="proj-bar">${u.projBreakdown.map(([pid, secs]) => {
+          const p = PROJECTS[pid];
+          return p ? `<span class="proj-pill bg-${p.cls} c-${p.cls}">${p.name} · ${fmtShort(secs)}</span>` : "";
+        }).join("")}</div>`
+      : "";
 
-    const entryRows = filteredEntries.slice(0,50).map(e => {
+    const entryRows = u.entries.map(e => {
       const p = PROJECTS[e.projectId];
       return `
         <div class="entry-row">
@@ -396,6 +368,12 @@ window.renderStudents = () => {
         </div>`;
     }).join("");
 
+    // Top-3 project breakdown columns in student header
+    const projCols = u.projBreakdown.slice(0, 3).map(([pid, secs]) => {
+      const p = PROJECTS[pid];
+      return p ? `<div class="sstats-item"><div class="sstats-label">${p.name}</div><div class="sstats-val mono" style="color:${p.color}">${fmtShort(secs)}</div></div>` : "";
+    }).join("");
+
     return `
       <div class="student-card fadeIn">
         <div class="student-header" onclick="toggleStudent('${u.uid}')">
@@ -405,32 +383,36 @@ window.renderStudents = () => {
             <div class="student-email">${u.email}</div>
           </div>
           <div class="student-stats">
-            ${projBreakdown.slice(0,3).map(([pid,secs])=>{const p=PROJECTS[pid];return p?`<div class="sstats-item"><div class="sstats-label">${p.name}</div><div class="sstats-val mono" style="color:${p.color}">${fmtShort(secs)}</div></div>`:""}).join("")}
+            ${projCols}
             <div class="sstats-item">
-              <div class="sstats-label">${weekF==="week"?"This week":"Total"}</div>
-              <div class="sstats-val mono">${fmtShort(totalSecs)}</div>
+              <div class="sstats-label">${period==="week"?"This week":"Total"}</div>
+              <div class="sstats-val mono">${fmtShort(u.totalSeconds)}</div>
             </div>
             <div class="sstats-item">
               <div class="sstats-label">Entries</div>
-              <div class="sstats-val mono">${totalCount}</div>
+              <div class="sstats-val mono">${u.totalEntries}</div>
             </div>
           </div>
           <svg class="chevron${isOpen?" open":""}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
         <div class="entries-wrap${isOpen?" open":""}">
-          ${projBreakdown.length>0?`<div class="proj-bar">${projBreakdown.map(([pid,secs])=>{const p=PROJECTS[pid];return p?`<span class="proj-pill bg-${p.cls} c-${p.cls}">${p.name} · ${fmtShort(secs)}</span>`:""}).join("")}</div>`:""}
-          ${totalCount===0?`<div class="no-entries">No entries for this period.</div>`:entryRows}
-          ${filteredEntries.length>50?`<div class="no-entries" style="font-size:12px;">Showing first 50 of ${filteredEntries.length} entries.</div>`:""}
+          ${projBreakdownHtml}
+          ${u.totalEntries===0?'<div class="no-entries">No entries for this period.</div>':entryRows}
+          ${u.totalEntries>50?`<div class="no-entries" style="font-size:12px;">Showing first 50 of ${u.totalEntries} entries.</div>`:""}
         </div>
       </div>`;
   }).join("");
-};
+}
 
 window.toggleStudent = uid => {
   if (expandedUsers.has(uid)) expandedUsers.delete(uid);
   else expandedUsers.add(uid);
-  renderStudents();
+  // Re-render with cached data to avoid a round-trip just for expand/collapse
+  loadStudents();
 };
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+loadConfig();
 </script>
 </body>
 </html>
