@@ -228,7 +228,6 @@ window.tryLogin = async () => {
 };
 
 window.signOutAdmin = () => {
-  fetch(`${API}/auth/logout`, { method: "POST" }).catch(() => {});
   sessionStorage.removeItem("tempo_admin_pw");
   adminPassword = "";
   allEntries = [];

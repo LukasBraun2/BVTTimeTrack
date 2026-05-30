@@ -553,8 +553,7 @@ window.handleLogin = () => {
   }, 500);
 };
 
-window.handleSignOut = async () => {
-  await fetch(`${API}/auth/logout`, { method: "POST" }).catch(() => {});
+window.handleSignOut = () => {
   localStorage.removeItem("tempo_user");
   window.currentUser = null;
   $("login-screen").style.display = "flex";
@@ -565,24 +564,11 @@ window.handleSignOut = async () => {
   renderEntries(); renderReports();
 };
 
-// Auto-restore session on page load — check server session first, fall back to localStorage
+// Restore session from localStorage only — admin logout won't affect this
 (function restoreSession(){
-  fetch(`${API}/auth/me`)
-    .then(r => r.ok ? r.json() : null)
-    .then(user => {
-      if (user) {
-        localStorage.setItem("tempo_user", JSON.stringify(user));
-        onUserSignedIn(user);
-      } else {
-        // Try localStorage as fallback (e.g. server restarted)
-        const stored = localStorage.getItem("tempo_user");
-        if (stored) { try { localStorage.removeItem("tempo_user"); } catch {} }
-        $("login-screen").style.display = "flex";
-      }
-    })
-    .catch(() => {
-      $("login-screen").style.display = "flex";
-    });
+  const stored = localStorage.getItem("tempo_user");
+  if (stored) { try { onUserSignedIn(JSON.parse(stored)); return; } catch {} }
+  $("login-screen").style.display = "flex";
 })();
 
 function onUserSignedIn(user) {
