@@ -87,7 +87,8 @@ async function loadConfig() {
     const res = await fetch(`${API}/api/config/ui`);
     const ui  = await res.json();
     document.getElementById("proj-filter").innerHTML =
-      `<option value="">All projects</option>` + ui.adminProjOptions;
+      `<option value="">All projects</option>` +
+      ui.projects.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
   } catch(e) { console.error("Failed to load config:", e); }
 }
 

@@ -7,16 +7,17 @@ const GoogleStrat = require("passport-google-oauth20").Strategy;
 const path        = require("path");
 const crypto      = require("crypto");
 const fs          = require("fs");
+const Database    = require("better-sqlite3");
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT        = process.env.PORT || 3000;
 const DATA_DIR    = path.join(__dirname, "..", "data");
-const DB_PATH     = path.join(DATA_DIR, "tempo.json");
+const DB_PATH     = path.join(DATA_DIR, "tempo.db");
 const CONFIG_PATH = path.join(DATA_DIR, "config.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// ── App-wide constants (single source of truth, served to clients) ────────────
+// ── App-wide constants ────────────────────────────────────────────────────────
 const PROJECTS = {
   academy:   { name: "Academy",   color: "#818CF8", cls: "academy"  },
   volunteer: { name: "Volunteer", color: "#22C97A", cls: "volunteer" },
@@ -29,7 +30,7 @@ const TAGS = [
   "online lecture", "Outlining / Wireframes", "WIX assignment",
 ];
 
-// ── Load / create config ──────────────────────────────────────────────────────
+// ── Load / create config (admin password only — not user data) ────────────────
 let config = { adminPassword: "admin123" };
 if (fs.existsSync(CONFIG_PATH)) {
   try { config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")); } catch {}
@@ -37,16 +38,79 @@ if (fs.existsSync(CONFIG_PATH)) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 
-// ── JSON "database" ───────────────────────────────────────────────────────────
-let db = { users: [], entries: [] };
-if (fs.existsSync(DB_PATH)) {
-  try { db = JSON.parse(fs.readFileSync(DB_PATH, "utf8")); } catch {}
-}
-if (!db.users)   db.users   = [];
-if (!db.entries) db.entries = [];
+// ── SQLite database ───────────────────────────────────────────────────────────
+const db = new Database(DB_PATH);
 
-function saveDB() {
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+// Enable WAL mode for better concurrent read performance
+db.pragma("journal_mode = WAL");
+db.pragma("foreign_keys = ON");
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id        TEXT PRIMARY KEY,
+    google_id TEXT UNIQUE NOT NULL,
+    email     TEXT NOT NULL,
+    name      TEXT NOT NULL,
+    photo     TEXT,
+    created   INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS entries (
+    id         TEXT PRIMARY KEY,
+    uid        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    desc       TEXT NOT NULL DEFAULT 'Untitled',
+    project_id TEXT,
+    tags       TEXT NOT NULL DEFAULT '[]',
+    start      TEXT NOT NULL,
+    end        TEXT NOT NULL,
+    duration   INTEGER NOT NULL,
+    created    INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_entries_uid       ON entries(uid);
+  CREATE INDEX IF NOT EXISTS idx_entries_start     ON entries(start);
+  CREATE INDEX IF NOT EXISTS idx_entries_uid_start ON entries(uid, start);
+`);
+
+// ── Prepared statements ───────────────────────────────────────────────────────
+const stmt = {
+  // users
+  findUserByGoogleId: db.prepare("SELECT * FROM users WHERE google_id = ?"),
+  findUserById:       db.prepare("SELECT * FROM users WHERE id = ?"),
+  insertUser:         db.prepare(
+    "INSERT INTO users (id, google_id, email, name, photo, created) VALUES (?, ?, ?, ?, ?, ?)"
+  ),
+  updateUser: db.prepare("UPDATE users SET name = ?, photo = ? WHERE id = ?"),
+
+  // entries
+  entriesByUid: db.prepare(
+    "SELECT * FROM entries WHERE uid = ? ORDER BY start DESC"
+  ),
+  entryById:    db.prepare("SELECT * FROM entries WHERE id = ?"),
+  insertEntry:  db.prepare(
+    `INSERT INTO entries (id, uid, desc, project_id, tags, start, end, duration, created)
+     VALUES (@id, @uid, @desc, @project_id, @tags, @start, @end, @duration, @created)`
+  ),
+  updateEntry: db.prepare(
+    `UPDATE entries
+     SET desc = @desc, project_id = @project_id, tags = @tags,
+         start = @start, end = @end, duration = @duration
+     WHERE id = @id AND uid = @uid`
+  ),
+  deleteEntry: db.prepare("DELETE FROM entries WHERE id = ? AND uid = ?"),
+
+  // admin stats
+  allEntries:     db.prepare("SELECT * FROM entries ORDER BY start DESC"),
+  weekEntries:    db.prepare("SELECT * FROM entries WHERE start >= ?"),
+  allUsers:       db.prepare("SELECT * FROM users"),
+  countEntries:   db.prepare("SELECT COUNT(*) AS n FROM entries"),
+};
+
+// ── Row helpers ───────────────────────────────────────────────────────────────
+// SQLite stores tags as a JSON string; parse on the way out.
+function parseEntry(row) {
+  if (!row) return null;
+  return { ...row, tags: JSON.parse(row.tags || "[]"), projectId: row.project_id };
 }
 
 const newId = () => crypto.randomUUID();
@@ -59,7 +123,6 @@ const SESSION_SECRET       = process.env.SESSION_SECRET || crypto.randomBytes(32
 
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
   console.error("\n❌  Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in .env\n");
-  console.error("   See README.md for setup instructions.\n");
   process.exit(1);
 }
 
@@ -75,16 +138,14 @@ passport.use(new GoogleStrat(
     const name  = profile.displayName || email;
     const photo = profile.photos?.[0]?.value || null;
 
-    let user = db.users.find(u => u.googleId === profile.id);
+    let user = stmt.findUserByGoogleId.get(profile.id);
     if (!user) {
-      user = { id: newId(), googleId: profile.id, email, name, photo, created: Date.now() };
-      db.users.push(user);
-      saveDB();
-    } else {
-      let changed = false;
-      if (user.name !== name)   { user.name  = name;  changed = true; }
-      if (user.photo !== photo) { user.photo = photo; changed = true; }
-      if (changed) saveDB();
+      const id = newId();
+      stmt.insertUser.run(id, profile.id, email, name, photo, Date.now());
+      user = stmt.findUserById.get(id);
+    } else if (user.name !== name || user.photo !== photo) {
+      stmt.updateUser.run(name, photo, user.id);
+      user = stmt.findUserById.get(user.id);
     }
     done(null, user);
   }
@@ -92,7 +153,7 @@ passport.use(new GoogleStrat(
 
 passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser((id, done) => {
-  const user = db.users.find(u => u.id === id);
+  const user = stmt.findUserById.get(id);
   done(null, user || false);
 });
 
@@ -110,13 +171,22 @@ app.use(passport.initialize());
 app.use(passport.session());
 app.use(express.static(path.join(__dirname, "..", "public")));
 
-// ── Shared app config (replaces duplicated constants in every HTML file) ──────
+// ── Middleware ────────────────────────────────────────────────────────────────
+function requireAuth(req, res, next) {
+  if (req.isAuthenticated()) return next();
+  return res.status(401).json({ error: "Not authenticated" });
+}
+
+function requireAdmin(req, res, next) {
+  if (req.session.isAdmin) return next();
+  return res.status(401).json({ error: "Unauthorized" });
+}
+
+// ── Shared config ─────────────────────────────────────────────────────────────
 app.get("/api/config", (_req, res) => {
   res.json({ projects: PROJECTS, tags: TAGS });
 });
 
-// Returns structured data only — the client is responsible for rendering.
-// Never embed onclick= strings or HTML in API responses.
 app.get("/api/config/ui", (_req, res) => {
   res.json({
     projects: Object.entries(PROJECTS).map(([id, p]) => ({ id, name: p.name, color: p.color })),
@@ -129,14 +199,9 @@ app.get("/auth/google",
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
 
-// OAuth callback: supports popup postMessage flow and plain redirect fallback.
-// The inline script is kept minimal — just route-selection logic.
 app.get("/auth/google/callback",
   passport.authenticate("google", { failureRedirect: "/?error=auth_failed" }),
-  (req, res) => {
-    // Session cookie is now the sole auth token.
-    // The popup flow sends a minimal signal (no user payload) — the opener
-    // calls /auth/me to get the user from the server-side session.
+  (_req, res) => {
     res.send(`<!DOCTYPE html><html><body><script>
 (function(){
   if(window.opener){
@@ -151,19 +216,16 @@ app.get("/auth/google/callback",
 );
 
 app.get("/auth/me", (req, res) => {
-  if (req.isAuthenticated()) {
-    const { id, email, name, photo } = req.user;
-    res.json({ id, email, name, photo });
-  } else {
-    res.status(401).json({ error: "Not authenticated" });
-  }
+  if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
+  const { id, email, name, photo } = req.user;
+  res.json({ id, email, name, photo });
 });
 
 app.post("/auth/logout", (req, res) => {
   req.logout(() => res.json({ ok: true }));
 });
 
-// ── Admin auth — session-based (no more password in query strings) ────────────
+// ── Admin auth ────────────────────────────────────────────────────────────────
 app.post("/api/auth/admin", (req, res) => {
   const { password } = req.body;
   if (password !== config.adminPassword)
@@ -181,250 +243,288 @@ app.get("/api/auth/admin/check", (req, res) => {
   res.json({ ok: !!req.session.isAdmin });
 });
 
-function requireAuth(req, res, next) {
-  if (req.isAuthenticated()) return next();
-  return res.status(401).json({ error: "Not authenticated" });
-}
-
-function requireAdmin(req, res, next) {
-  if (req.session.isAdmin) return next();
-  return res.status(401).json({ error: "Unauthorized" });
-}
-
-// ── Entries: CRUD ─────────────────────────────────────────────────────────────
-const fmtSec = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
+// ── Formatting helpers ────────────────────────────────────────────────────────
+const fmtSec   = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
 const fmtShort = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; };
 const fmtTime  = d => new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-const fmtDate  = d => { const t=new Date(),y=new Date(t); y.setDate(y.getDate()-1); const dd=new Date(d); if(dd.toDateString()===t.toDateString())return"Today"; if(dd.toDateString()===y.toDateString())return"Yesterday"; return dd.toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"}); };
+const fmtDate  = d => {
+  const today = new Date(), yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const dd = new Date(d);
+  if (dd.toDateString() === today.toDateString())     return "Today";
+  if (dd.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return dd.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+};
 
-// /api/entries/list — grouped+formatted data for the tracker view
+// ── Entries: list (grouped + formatted for tracker view) ─────────────────────
 app.get("/api/entries/list", requireAuth, (req, res) => {
-  const uid = req.user.id;
-  const entries = db.entries.filter(e => e.uid === uid)
-    .sort((a, b) => new Date(b.start) - new Date(a.start));
-  const dayMap = {};
-  entries.forEach(e => {
+  const rows    = stmt.entriesByUid.all(req.user.id).map(parseEntry);
+  const dayMap  = {};
+
+  rows.forEach(e => {
     const label = fmtDate(e.start);
     if (!dayMap[label]) dayMap[label] = [];
     const p = e.projectId ? PROJECTS[e.projectId] : null;
-    dayMap[label].push({ ...e, startFormatted: fmtTime(e.start), endFormatted: fmtTime(e.end),
-      durationFormatted: fmtSec(e.duration), projectName: p?.name||null, projectColor: p?.color||null });
+    dayMap[label].push({
+      ...e,
+      startFormatted:    fmtTime(e.start),
+      endFormatted:      fmtTime(e.end),
+      durationFormatted: fmtSec(e.duration),
+      projectName:       p?.name  || null,
+      projectColor:      p?.color || null,
+    });
   });
+
   const days = Object.entries(dayMap).map(([label, dayEntries]) => {
     const groupMap = {};
-    dayEntries.forEach(e => { const k=(e.desc||"Untitled")+"||"+(e.projectId||""); if(!groupMap[k])groupMap[k]=[]; groupMap[k].push(e); });
+    dayEntries.forEach(e => {
+      const k = (e.desc || "Untitled") + "||" + (e.projectId || "");
+      if (!groupMap[k]) groupMap[k] = [];
+      groupMap[k].push(e);
+    });
     const groups = Object.entries(groupMap).map(([key, ge]) => ({
-      key, hasMultiple: ge.length>1,
-      totalFormatted: fmtSec(ge.reduce((s,e)=>s+e.duration,0)),
-      entries: ge,
+      key,
+      hasMultiple:   ge.length > 1,
+      totalFormatted: fmtSec(ge.reduce((s, e) => s + e.duration, 0)),
+      entries:        ge,
     }));
-    return { label, entryCount: dayEntries.length, totalFormatted: fmtShort(dayEntries.reduce((s,e)=>s+e.duration,0)), groups };
+    return {
+      label,
+      entryCount:    dayEntries.length,
+      totalFormatted: fmtShort(dayEntries.reduce((s, e) => s + e.duration, 0)),
+      groups,
+    };
   });
+
   res.json(days);
 });
 
-// /api/entries/stats — today + week seconds for the topbar
+// ── Entries: stats (topbar today/week counts) ─────────────────────────────────
 app.get("/api/entries/stats", requireAuth, (req, res) => {
-  const entries = db.entries.filter(e => e.uid === req.user.id);
-  const now = new Date(), ws = new Date(now);
-  ws.setDate(now.getDate()-now.getDay()); ws.setHours(0,0,0,0);
-  res.json({
-    todaySeconds: entries.filter(e=>new Date(e.start).toDateString()===now.toDateString()).reduce((s,e)=>s+e.duration,0),
-    weekSeconds:  entries.filter(e=>new Date(e.start)>=ws).reduce((s,e)=>s+e.duration,0),
-  });
+  const now  = new Date();
+  const ws   = new Date(now);
+  ws.setDate(now.getDate() - now.getDay());
+  ws.setHours(0, 0, 0, 0);
+
+  const todayStr = now.toDateString();
+
+  // Two focused queries instead of pulling all rows into JS
+  const todaySeconds = db.prepare(
+    "SELECT COALESCE(SUM(duration),0) AS n FROM entries WHERE uid = ? AND start >= ?"
+  ).get(req.user.id, new Date(todayStr).toISOString()).n;
+
+  const weekSeconds = db.prepare(
+    "SELECT COALESCE(SUM(duration),0) AS n FROM entries WHERE uid = ? AND start >= ?"
+  ).get(req.user.id, ws.toISOString()).n;
+
+  res.json({ todaySeconds, weekSeconds });
 });
 
-// /api/entries/reports — aggregated data for the reports view
+// ── Entries: reports (aggregated breakdown for reports view) ──────────────────
 app.get("/api/entries/reports", requireAuth, (req, res) => {
-  const entries = db.entries.filter(e => e.uid === req.user.id);
-  const total = entries.reduce((s,e)=>s+e.duration,0);
-  const uniqueDays = new Set(entries.map(e=>new Date(e.start).toDateString())).size;
-  const byProj = Object.entries(PROJECTS).map(([id,p]) => {
-    const pe = entries.filter(e=>e.projectId===id);
-    return { id, ...p, total: pe.reduce((s,e)=>s+e.duration,0), count: pe.length };
-  }).filter(p=>p.total>0).sort((a,b)=>b.total-a.total);
-  const grand = byProj.reduce((s,p)=>s+p.total,0);
+  const rows  = stmt.entriesByUid.all(req.user.id).map(parseEntry);
+  const total = rows.reduce((s, e) => s + e.duration, 0);
+  const uniqueDays = new Set(rows.map(e => new Date(e.start).toDateString())).size;
+
+  const byProj = Object.entries(PROJECTS).map(([id, p]) => {
+    const pe = rows.filter(e => e.projectId === id);
+    return { id, ...p, total: pe.reduce((s, e) => s + e.duration, 0), count: pe.length };
+  }).filter(p => p.total > 0).sort((a, b) => b.total - a.total);
+
+  const grand = byProj.reduce((s, p) => s + p.total, 0);
+
   res.json({
-    totalFormatted: fmtSec(total), entryCount: entries.length,
-    activeProjects: byProj.length, avgDailyFormatted: fmtShort(Math.round(total/Math.max(1,uniqueDays))),
-    grandFormatted: fmtSec(grand),
-    projects: byProj.map(p=>({ ...p, totalFormatted: fmtSec(p.total), pct: grand>0?Math.round(p.total/grand*100):0 })),
+    totalFormatted:    fmtSec(total),
+    entryCount:        rows.length,
+    activeProjects:    byProj.length,
+    avgDailyFormatted: fmtShort(Math.round(total / Math.max(1, uniqueDays))),
+    grandFormatted:    fmtSec(grand),
+    projects: byProj.map(p => ({
+      ...p,
+      totalFormatted: fmtSec(p.total),
+      pct: grand > 0 ? Math.round(p.total / grand * 100) : 0,
+    })),
   });
 });
 
+// ── Entries: raw list (used by admin CSV export) ──────────────────────────────
 app.get("/api/entries", requireAuth, (req, res) => {
-  const entries = db.entries
-    .filter(e => e.uid === req.user.id)
-    .sort((a, b) => new Date(b.start) - new Date(a.start));
-  res.json(entries);
+  res.json(stmt.entriesByUid.all(req.user.id).map(parseEntry));
 });
 
+// ── Entries: create ───────────────────────────────────────────────────────────
 app.post("/api/entries", requireAuth, (req, res) => {
   const { desc, projectId, tags, start, end, duration } = req.body;
   if (!start || !end || duration == null)
     return res.status(400).json({ error: "Missing fields" });
-  const entry = {
-    id: newId(),
-    uid:      req.user.id,
-    email:    req.user.email,
-    userName: req.user.name,
-    desc: desc || "Untitled", projectId: projectId || null,
-    tags: tags || [], start, end, duration, created: Date.now(),
-  };
-  db.entries.push(entry);
-  saveDB();
-  res.status(201).json(entry);
-});
 
-app.patch("/api/entries/:id", requireAuth, (req, res) => {
-  const { id } = req.params;
-  const { desc, projectId, tags, start, end, duration } = req.body;
-  const idx = db.entries.findIndex(e => e.id === id);
-  if (idx === -1) return res.status(404).json({ error: "Not found" });
-  if (db.entries[idx].uid !== req.user.id) return res.status(403).json({ error: "Forbidden" });
-  Object.assign(db.entries[idx], {
-    ...(desc      !== undefined && { desc }),
-    ...(projectId !== undefined && { projectId }),
-    ...(tags      !== undefined && { tags }),
-    ...(start     !== undefined && { start }),
-    ...(end       !== undefined && { end }),
-    ...(duration  !== undefined && { duration }),
+  const id = newId();
+  stmt.insertEntry.run({
+    id,
+    uid:        req.user.id,
+    desc:       desc || "Untitled",
+    project_id: projectId || null,
+    tags:       JSON.stringify(tags || []),
+    start,
+    end,
+    duration,
+    created:    Date.now(),
   });
-  saveDB();
-  res.json(db.entries[idx]);
+
+  res.status(201).json(parseEntry(stmt.entryById.get(id)));
 });
 
+// ── Entries: update ───────────────────────────────────────────────────────────
+app.patch("/api/entries/:id", requireAuth, (req, res) => {
+  const existing = stmt.entryById.get(req.params.id);
+  if (!existing)              return res.status(404).json({ error: "Not found" });
+  if (existing.uid !== req.user.id) return res.status(403).json({ error: "Forbidden" });
+
+  const { desc, projectId, tags, start, end, duration } = req.body;
+
+  // Merge: only overwrite fields that were actually sent
+  stmt.updateEntry.run({
+    id:         req.params.id,
+    uid:        req.user.id,
+    desc:       desc       !== undefined ? desc       : existing.desc,
+    project_id: projectId  !== undefined ? projectId  : existing.project_id,
+    tags:       tags       !== undefined ? JSON.stringify(tags) : existing.tags,
+    start:      start      !== undefined ? start      : existing.start,
+    end:        end        !== undefined ? end        : existing.end,
+    duration:   duration   !== undefined ? duration   : existing.duration,
+  });
+
+  res.json(parseEntry(stmt.entryById.get(req.params.id)));
+});
+
+// ── Entries: delete ───────────────────────────────────────────────────────────
 app.delete("/api/entries/:id", requireAuth, (req, res) => {
-  const { id } = req.params;
-  const idx = db.entries.findIndex(e => e.id === id);
-  if (idx === -1) return res.status(404).json({ error: "Not found" });
-  if (db.entries[idx].uid !== req.user.id) return res.status(403).json({ error: "Forbidden" });
-  db.entries.splice(idx, 1);
-  saveDB();
+  const existing = stmt.entryById.get(req.params.id);
+  if (!existing)              return res.status(404).json({ error: "Not found" });
+  if (existing.uid !== req.user.id) return res.status(403).json({ error: "Forbidden" });
+  stmt.deleteEntry.run(req.params.id, req.user.id);
   res.json({ ok: true });
 });
 
 // ── Admin: aggregated stats ───────────────────────────────────────────────────
-// Moves all the stat computation that was happening client-side in admin.html.
 app.get("/api/admin/stats", requireAdmin, (req, res) => {
-  const now = new Date();
-  const ws  = new Date(now);
-  ws.setDate(now.getDate() - now.getDay());
-  ws.setHours(0, 0, 0, 0);
+  const ws = weekStart();
 
-  const weekEntries = db.entries.filter(e => new Date(e.start) >= ws);
-  const allUids     = [...new Set(db.entries.map(e => e.uid))];
-  const weekUids    = [...new Set(weekEntries.map(e => e.uid))];
-  const weekSecs    = weekEntries.reduce((s, e) => s + e.duration, 0);
-  const avgSecs     = weekUids.length > 0 ? Math.round(weekSecs / weekUids.length) : 0;
+  const { weekSecs } = db.prepare(
+    "SELECT COALESCE(SUM(duration),0) AS weekSecs FROM entries WHERE start >= ?"
+  ).get(ws.toISOString());
+
+  const { totalEntries } = db.prepare(
+    "SELECT COUNT(*) AS totalEntries FROM entries"
+  ).get();
+
+  const { totalStudents } = db.prepare(
+    "SELECT COUNT(DISTINCT uid) AS totalStudents FROM entries"
+  ).get();
+
+  const { weekStudents } = db.prepare(
+    "SELECT COUNT(DISTINCT uid) AS weekStudents FROM entries WHERE start >= ?"
+  ).get(ws.toISOString());
+
+  const avgSecs = weekStudents > 0 ? Math.round(weekSecs / weekStudents) : 0;
 
   res.json({
-    totalStudents:  allUids.length,
-    weekSeconds:    weekSecs,
-    totalEntries:   db.entries.length,
-    avgWeekSeconds: avgSecs,
+    totalStudents,
+    weekSeconds:      weekSecs,
+    weekFormatted:    fmtSec(weekSecs),
+    totalEntries,
+    avgWeekSeconds:   avgSecs,
+    avgWeekFormatted: fmtShort(avgSecs),
   });
 });
 
-// ── Admin: students view (grouped, filtered, sorted server-side) ──────────────
-// Accepts: ?project=academy|volunteer|module5  &period=week|all  &search=text
-// Returns an array of student objects, each with their filtered entry list and
-// pre-computed totals — so admin.html only has to render, not aggregate.
+// ── Admin: students view ──────────────────────────────────────────────────────
 app.get("/api/admin/students", requireAdmin, (req, res) => {
   const { project = "", period = "week", search = "" } = req.query;
+  const ws = weekStart();
 
-  const now = new Date();
-  const ws  = new Date(now);
-  ws.setDate(now.getDate() - now.getDay());
-  ws.setHours(0, 0, 0, 0);
-
-  // Build per-user buckets
-  const byUser = {};
-  db.entries.forEach(e => {
-    const user = db.users.find(u => u.id === e.uid);
-    if (!byUser[e.uid]) {
-      byUser[e.uid] = {
-        uid:     e.uid,
-        email:   e.email || user?.email || "",
-        name:    e.userName || user?.name || e.email || "Unknown",
-        photo:   user?.photo || null,
-        entries: [],
-      };
-    }
-    byUser[e.uid].entries.push({ ...e, userName: byUser[e.uid].name });
-  });
-
-  let students = Object.values(byUser);
+  // Pull all users who have at least one entry; join from entries side so we
+  // never show a user with zero entries.
+  let users = db.prepare("SELECT DISTINCT u.* FROM users u JOIN entries e ON e.uid = u.id").all();
 
   // Text search
   if (search) {
     const q = search.toLowerCase();
-    students = students.filter(u =>
+    users = users.filter(u =>
       u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
     );
   }
 
-  // Project filter
+  // Project filter: keep only users who have an entry in that project
   if (project) {
-    students = students.filter(u => u.entries.some(e => e.projectId === project));
+    const uids = new Set(
+      db.prepare("SELECT DISTINCT uid FROM entries WHERE project_id = ?").all(project).map(r => r.uid)
+    );
+    users = users.filter(u => uids.has(u.id));
   }
 
-  // Period filter + project filter applied to each student's entry list
-  students = students.map(u => {
-    let entries = period === "week"
-      ? u.entries.filter(e => new Date(e.start) >= ws)
-      : u.entries;
-    if (project) entries = entries.filter(e => e.projectId === project);
+  const students = users.map(u => {
+    // All entries for this user (used for week breakdown totals)
+    const allRows = db.prepare("SELECT * FROM entries WHERE uid = ? ORDER BY start DESC").all(u.id).map(parseEntry);
 
-    // Sort entries newest-first
-    entries = entries.slice().sort((a, b) => new Date(b.start) - new Date(a.start));
+    // Filtered entry list (period + project)
+    let filtered = allRows;
+    if (period === "week") filtered = filtered.filter(e => new Date(e.start) >= ws);
+    if (project)           filtered = filtered.filter(e => e.projectId === project);
 
-    // Project breakdown
-    const projBreakdown = Object.entries(
-      u.entries // always use all entries for breakdown totals
-        .filter(e => e.projectId && (!project || e.projectId === project))
-        .filter(e => period !== "week" || new Date(e.start) >= ws)
-        .reduce((acc, e) => {
-          acc[e.projectId] = (acc[e.projectId] || 0) + e.duration;
-          return acc;
-        }, {})
-    ).sort((a, b) => b[1] - a[1]);
+    const weekRows = allRows.filter(e => new Date(e.start) >= ws);
 
-    const totalSeconds = entries.reduce((s, e) => s + e.duration, 0);
-    const weekSeconds  = u.entries
-      .filter(e => new Date(e.start) >= ws)
-      .reduce((s, e) => s + e.duration, 0);
+    // Project breakdown (respects period + project filters)
+    const projTotals = {};
+    allRows
+      .filter(e => e.projectId && (!project || e.projectId === project))
+      .filter(e => period !== "week" || new Date(e.start) >= ws)
+      .forEach(e => { projTotals[e.projectId] = (projTotals[e.projectId] || 0) + e.duration; });
+
+    const projBreakdown = Object.entries(projTotals)
+      .sort((a, b) => b[1] - a[1])
+      .map(([id, secs]) => {
+        const p = PROJECTS[id] || {};
+        return { id, name: p.name || id, color: p.color || "#888", cls: p.cls || "", formatted: fmtShort(secs) };
+      });
+
+    const totalSeconds = filtered.reduce((s, e) => s + e.duration, 0);
+    const weekSeconds  = weekRows.reduce((s, e) => s + e.duration, 0);
 
     return {
-      uid:           u.uid,
+      uid:           u.id,
       email:         u.email,
       name:          u.name,
       photo:         u.photo,
       totalSeconds,
+      totalFormatted: fmtSec(totalSeconds),
       weekSeconds,
-      totalEntries:  entries.length,
-      projBreakdown, // [[projectId, seconds], ...]
-      entries,       // filtered + sorted, capped at 50 for response size
+      totalEntries:  filtered.length,
+      projBreakdown,
+      entries:       filtered.slice(0, 50).map(e => ({
+        ...e,
+        dateShort:         new Date(e.start).toLocaleDateString([], { month: "short", day: "numeric" }),
+        startFormatted:    fmtTime(e.start),
+        endFormatted:      fmtTime(e.end),
+        durationFormatted: fmtSec(e.duration),
+        projectName:       e.projectId ? PROJECTS[e.projectId]?.name  : null,
+        projectColor:      e.projectId ? PROJECTS[e.projectId]?.color : null,
+      })),
     };
   });
 
-  // Sort by week hours descending
   students.sort((a, b) => b.weekSeconds - a.weekSeconds);
-
-  // Cap entries per student to keep payload manageable
-  students = students.map(u => ({ ...u, entries: u.entries.slice(0, 50) }));
-
   res.json(students);
 });
 
-// ── Admin: all raw entries (kept for backward compat / CSV export use) ─────────
+// ── Admin: all raw entries (CSV export) ───────────────────────────────────────
 app.get("/api/admin/entries", requireAdmin, (req, res) => {
-  const entries = [...db.entries].sort((a, b) => new Date(b.start) - new Date(a.start));
-  const resolved = entries.map(e => {
-    const user = db.users.find(u => u.id === e.uid);
-    return { ...e, userName: e.userName || user?.name || e.email };
-  });
-  res.json(resolved);
+  const rows = db.prepare(`
+    SELECT e.*, u.name AS user_name, u.email AS user_email
+    FROM entries e LEFT JOIN users u ON u.id = e.uid
+    ORDER BY e.start DESC
+  `).all().map(row => ({ ...parseEntry(row), userName: row.user_name || row.user_email }));
+  res.json(rows);
 });
 
 // ── Admin: change password ────────────────────────────────────────────────────
@@ -439,10 +539,19 @@ app.post("/api/admin/change-password", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function weekStart() {
+  const ws = new Date();
+  ws.setDate(ws.getDate() - ws.getDay());
+  ws.setHours(0, 0, 0, 0);
+  return ws;
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n✅ Tempo server running at ${BASE_URL}`);
   console.log(`   Student tracker: ${BASE_URL}/`);
   console.log(`   Admin panel:     ${BASE_URL}/admin.html`);
   console.log(`   Admin password:  ${config.adminPassword}`);
-  console.log(`   Data stored at:  ${DB_PATH}\n`);
+  console.log(`   Database:        ${DB_PATH}\n`);
 });
