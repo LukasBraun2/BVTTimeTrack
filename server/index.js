@@ -115,6 +115,22 @@ app.get("/api/config", (_req, res) => {
   res.json({ projects: PROJECTS, tags: TAGS });
 });
 
+app.get("/api/config/ui", (_req, res) => {
+  const sidebarProjects = Object.entries(PROJECTS).map(([,p]) =>
+    `<div class="proj-item"><span class="proj-dot" style="background:${p.color};box-shadow:0 0 5px ${p.color}80;"></span>${p.name}</div>`
+  ).join("");
+  const projDropItems = Object.entries(PROJECTS).map(([id, p]) =>
+    `<div class="ditem" onclick="selectProj('${id}')"><span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0;display:inline-block;"></span>${p.name}</div>`
+  ).join("");
+  const editProjOptions = Object.entries(PROJECTS).map(([id, p]) =>
+    `<option value="${id}">${p.name}</option>`
+  ).join("");
+  const tagsDropItems = TAGS.map(t =>
+    `<div class="ditem" id="tag-opt-${t.replace(/\s+/g,"-")}" onclick="event.stopPropagation();toggleTag('${t.replace(/'/g,"\\'")}')"><span class="check-box" id="chk-${t.replace(/\s+/g,"-")}"></span>${t}</div>`
+  ).join("");
+  res.json({ sidebarProjects, projDropItems, editProjOptions, tagsDropItems });
+});
+
 // ── Auth routes ───────────────────────────────────────────────────────────────
 app.get("/auth/google",
   passport.authenticate("google", { scope: ["profile", "email"] })
