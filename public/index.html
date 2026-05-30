@@ -48,7 +48,7 @@
         Reports
       </button>
       <div class="sb-section">Projects</div>
-      <!-- Injected from /api/config/ui -->
+      <!-- Project list populated from /api/config -->
       <div id="sidebar-projects"></div>
       <div class="sidebar-footer">
         <div class="user-row">
@@ -128,7 +128,7 @@
           <div class="timer-err" id="timer-err" style="display:none;"></div>
         </div>
 
-        <div id="db-loading" class="db-loading">Loading your entries...</div>
+        <div id="db-loading" class="db-loading">Loading your entries…</div>
         <div id="entry-list"></div>
         <div id="empty-state" class="empty" style="display:none;">
           <svg class="empty-icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--t2)" stroke-width=".9"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -156,13 +156,13 @@
   </div>
 </div>
 
-<!-- Dropdowns — items injected from /api/config/ui -->
+<!-- Dropdowns — project options injected after /api/config loads -->
 <div class="drop" id="proj-drop">
   <div class="ditem" onclick="selectProj(null)"><span style="font-size:12px;color:var(--t2);">No project</span></div>
 </div>
 <div class="drop" id="tags-drop" style="max-height:320px;overflow-y:auto;"></div>
 
-<!-- Edit modal — project options injected from /api/config/ui -->
+<!-- Edit modal — project <select> options injected after /api/config loads -->
 <div class="modal-bg" id="edit-modal">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title">Edit entry</div>
@@ -177,7 +177,7 @@
     <div class="field"><label>Time</label>
       <div class="time-row">
         <div class="time-col"><div class="time-col-lbl">Start</div><input type="time" id="edit-start" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:13.5px;color:var(--t0);font-family:'Geist Mono',monospace;outline:none;" oninput="updateEditDur()"/></div>
-        <div class="time-arrow">&#8594;</div>
+        <div class="time-arrow">→</div>
         <div class="time-col"><div class="time-col-lbl">End</div><input type="time" id="edit-end" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:13.5px;color:var(--t0);font-family:'Geist Mono',monospace;outline:none;" oninput="updateEditDur()"/></div>
         <div class="duration-col"><div class="duration-lbl">Duration</div><div class="duration-val mono" id="edit-dur-display">--:--:--</div></div>
       </div>
@@ -192,82 +192,118 @@
 </div>
 
 <script>
+// ── API base ──────────────────────────────────────────────────────────────────
 const API = window.location.origin;
 
-// PROJECTS kept for proj-chip color; TAGS for edit modal tag toggles
+// ── App constants — fetched from server, not hardcoded ────────────────────────
+// PROJECTS and TAGS are populated by loadConfig() before the app renders.
 let PROJECTS = {};
-let TAGS     = [];
+let TAGS = [];
 
 async function loadConfig() {
-  const [cfgRes, uiRes] = await Promise.all([
-    fetch(`${API}/api/config`),
-    fetch(`${API}/api/config/ui`),
-  ]);
-  const cfg = await cfgRes.json();
-  const ui  = await uiRes.json();
-  PROJECTS = cfg.projects;
-  TAGS     = cfg.tags;
-  // Inject server-built HTML — replaces buildDynamicUI()
-  document.getElementById("sidebar-projects").innerHTML = ui.sidebarProjects;
-  document.getElementById("proj-drop").innerHTML =
-    `<div class="ditem" onclick="selectProj(null)"><span style="font-size:12px;color:var(--t2);">No project</span></div>` +
-    ui.projDropItems;
-  document.getElementById("edit-proj").innerHTML =
-    `<option value="">No project</option>` + ui.editProjOptions;
-  document.getElementById("tags-drop").innerHTML = ui.tagsDropItems;
+  try {
+    const res = await fetch(`${API}/api/config`);
+    const cfg = await res.json();
+    PROJECTS = cfg.projects;
+    TAGS     = cfg.tags;
+    buildDynamicUI();
+  } catch (e) {
+    console.error("Failed to load app config:", e);
+  }
+}
+
+// Build all the DOM nodes that depend on PROJECTS / TAGS
+function buildDynamicUI() {
+  // Sidebar project list
+  const sb = document.getElementById("sidebar-projects");
+  sb.innerHTML = Object.entries(PROJECTS).map(([,p]) =>
+    `<div class="proj-item"><span class="proj-dot" style="background:${p.color};box-shadow:0 0 5px ${p.color}80;"></span>${p.name}</div>`
+  ).join("");
+
+  // Project dropdown items
+  const projDrop = document.getElementById("proj-drop");
+  Object.entries(PROJECTS).forEach(([id, p]) => {
+    const d = document.createElement("div");
+    d.className = "ditem";
+    d.id = "proj-opt-" + id;
+    d.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0;display:inline-block;"></span>${p.name}`;
+    d.onclick = () => selectProj(id);
+    projDrop.appendChild(d);
+  });
+
+  // Edit modal project <select> options
+  const sel = document.getElementById("edit-proj");
+  Object.entries(PROJECTS).forEach(([id, p]) => {
+    const opt = document.createElement("option");
+    opt.value = id; opt.textContent = p.name;
+    sel.appendChild(opt);
+  });
+
+  // Tags dropdown
+  const tagsDrop = document.getElementById("tags-drop");
+  TAGS.forEach(t => {
+    const d = document.createElement("div");
+    d.className = "ditem";
+    d.id = "tag-opt-" + t.replace(/\s+/g, "-");
+    d.innerHTML = `<span class="check-box" id="chk-${t.replace(/\s+/g,"-")}"></span>${t}`;
+    d.onclick = e => { e.stopPropagation(); toggleTag(t); };
+    tagsDrop.appendChild(d);
+  });
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
-window.timerMode      = "timer";
-window.timerStart     = null;
-window.timerInterval  = null;
-window.selectedProj   = null;
-window.selectedTags   = [];
-window.currentUser    = null;
-window.expandedGroups = new Set();
-window.entryDays      = [];
-window.statsBase      = { todaySeconds: 0, weekSeconds: 0 };
+window.timerMode     = "timer";
+window.timerStart    = null;
+window.timerInterval = null;
+window.selectedProj  = null;
+window.selectedTags  = [];
+window.currentEntries= [];
+window.currentUser   = null;
+window.editStartDate = null;
+window.editEndDate   = null;
 
-// ── Helpers (live timer display + edit modal only) ────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt      = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
-const toTimeStr = d => { const dt=new Date(d); return `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}`; };
-const $        = id => document.getElementById(id);
+const fmtShort = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; };
+const fmtTime  = d => new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+const fmtDate  = d => { const t=new Date(),y=new Date(t); y.setDate(y.getDate()-1); const dd=new Date(d); if(dd.toDateString()===t.toDateString())return"Today"; if(dd.toDateString()===y.toDateString())return"Yesterday"; return dd.toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"}); };
+const toTimeStr    = d => { const dt=new Date(d); return `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}`; };
+const weekStart    = () => { const n=new Date(),ws=new Date(n); ws.setDate(n.getDate()-n.getDay()); ws.setHours(0,0,0,0); return ws; };
+const $            = id => document.getElementById(id);
 
-// ── Sidebar / nav ─────────────────────────────────────────────────────────────
 window.openSidebar  = () => { $("sidebar").classList.add("open"); $("sidebar-overlay").classList.add("open"); };
 window.closeSidebar = () => { $("sidebar").classList.remove("open"); $("sidebar-overlay").classList.remove("open"); };
 
-window.setView = v => {
-  $("view-tracker").style.display = v === "tracker" ? "block" : "none";
-  $("view-reports").style.display = v === "reports" ? "block" : "none";
-  $("nav-tracker").className = "nav-btn" + (v === "tracker" ? " on" : "");
-  $("nav-reports").className = "nav-btn" + (v === "reports" ? " on" : "");
-  $("topbar-title").textContent = v === "tracker" ? "Time Tracker" : "My Reports";
-  if (v === "reports") loadReports();
-  closeSidebar();
-};
-
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Auth — Google OAuth (popup flow) ─────────────────────────────────────────
 window.handleLogin = () => {
   const btn = $("google-btn");
-  btn.disabled = true; btn.textContent = "Signing in...";
-  const popup = window.open(`${API}/auth/google`, "google_auth",
-    "width=500,height=620,left=" + (screen.width/2-250) + ",top=" + (screen.height/2-310));
+  btn.disabled = true; btn.textContent = "Signing in…";
+
+  const popup = window.open(
+    `${API}/auth/google`,
+    "google_auth",
+    "width=500,height=620,left=" + (screen.width/2 - 250) + ",top=" + (screen.height/2 - 310)
+  );
+
   function onMessage(e) {
-    if (e.origin !== API || e.data?.type !== "GOOGLE_AUTH_SUCCESS") return;
+    if (e.origin !== API) return;
+    if (e.data?.type !== "GOOGLE_AUTH_SUCCESS") return;
     window.removeEventListener("message", onMessage);
-    localStorage.setItem("tempo_user", JSON.stringify(e.data.user));
-    onUserSignedIn(e.data.user);
+    const user = e.data.user;
+    localStorage.setItem("tempo_user", JSON.stringify(user));
+    onUserSignedIn(user);
   }
   window.addEventListener("message", onMessage);
+
   const poll = setInterval(() => {
-    if (!popup?.closed) return;
-    clearInterval(poll);
-    window.removeEventListener("message", onMessage);
-    const stored = localStorage.getItem("tempo_user");
-    if (stored) { try { onUserSignedIn(JSON.parse(stored)); return; } catch {} }
-    btn.disabled = false;
-    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>Continue with Google';
+    if (popup?.closed) {
+      clearInterval(poll);
+      window.removeEventListener("message", onMessage);
+      const stored = localStorage.getItem("tempo_user");
+      if (stored) { try { onUserSignedIn(JSON.parse(stored)); return; } catch {} }
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>Continue with Google';
+    }
   }, 500);
 };
 
@@ -278,12 +314,12 @@ window.handleSignOut = () => {
   $("app").style.display = "none";
   clearInterval(window.timerInterval);
   window.timerStart = null;
-  window.entryDays = [];
-  $("entry-list").innerHTML = "";
-  $("empty-state").style.display = "none";
+  window.currentEntries = [];
+  renderEntries(); renderReports();
 };
 
-(function restoreSession() {
+// Restore session
+(function restoreSession(){
   const stored = localStorage.getItem("tempo_user");
   if (stored) { try { onUserSignedIn(JSON.parse(stored)); return; } catch {} }
   $("login-screen").style.display = "flex";
@@ -296,9 +332,8 @@ function onUserSignedIn(user) {
   $("user-name-sb").textContent  = user.name  || "";
   $("user-email-sb").textContent = user.email || "";
   const wrap = $("user-avatar-wrap");
-  wrap.innerHTML = user.photo
-    ? `<img src="${user.photo}" class="user-avatar"/>`
-    : `<div class="user-avatar-placeholder">${(user.name||user.email||"?")[0].toUpperCase()}</div>`;
+  if (user.photo) { wrap.innerHTML = `<img src="${user.photo}" class="user-avatar"/>`; }
+  else { wrap.innerHTML = `<div class="user-avatar-placeholder">${(user.name||user.email||"?")[0].toUpperCase()}</div>`; }
   loadEntries(user);
 }
 
@@ -306,63 +341,30 @@ function onUserSignedIn(user) {
 async function loadEntries(user) {
   $("db-loading").style.display = "block";
   try {
-    const uid = encodeURIComponent(user.id);
-    const [listRes, statsRes] = await Promise.all([
-      fetch(`${API}/api/entries/list/${uid}`),
-      fetch(`${API}/api/entries/stats/${uid}`),
-    ]);
-    window.entryDays = await listRes.json();
-    window.statsBase = await statsRes.json();
+    const res = await fetch(`${API}/api/entries?uid=${encodeURIComponent(user.id)}`);
+    window.currentEntries = await res.json();
     $("db-loading").style.display = "none";
-    renderEntries();
-    updateTopStats();
+    renderEntries(); renderReports(); updateTopStats();
   } catch(e) {
     console.error("Failed to load entries:", e);
     $("db-loading").style.display = "none";
   }
 }
 
-// ── Top stats — server base + live timer offset ───────────────────────────────
-function updateTopStats() {
-  const live = window.timerStart ? Math.floor((Date.now() - window.timerStart) / 1000) : 0;
-  $("stat-today").textContent = fmt((window.statsBase.todaySeconds || 0) + live);
-  $("stat-week").textContent  = fmt((window.statsBase.weekSeconds  || 0) + live);
-}
-
-// ── Reports — entirely server-computed ───────────────────────────────────────
-async function loadReports() {
-  try {
-    const res  = await fetch(`${API}/api/entries/reports/${encodeURIComponent(window.currentUser.id)}`);
-    const data = await res.json();
-    $("r-total").textContent    = data.totalFormatted;
-    $("r-entries").textContent  = `${data.entryCount} entries`;
-    $("r-projects").textContent = data.activeProjects;
-    $("r-avg").textContent      = data.avgDailyFormatted;
-    $("r-grand").textContent    = data.grandFormatted + " total";
-    $("r-proj-rows").innerHTML  = data.projects.length === 0
-      ? `<div style="padding:48px;text-align:center;color:var(--t2);font-size:13px;">No data yet</div>`
-      : data.projects.map(p => `
-          <div class="proj-row">
-            <div class="proj-row-top">
-              <div class="proj-row-left">
-                <span class="proj-glow-dot" style="background:${p.color};box-shadow:0 0 7px ${p.color}90;"></span>
-                <span class="proj-name">${p.name}</span>
-                <span class="proj-count">${p.count} ${p.count===1?"entry":"entries"}</span>
-              </div>
-              <div class="proj-row-right">
-                <span class="proj-pct">${p.pct}%</span>
-                <span class="proj-dur mono">${p.totalFormatted}</span>
-              </div>
-            </div>
-            <div class="bar-track"><div class="bar-fill" style="width:${p.pct}%;background:${p.color};box-shadow:0 0 8px ${p.color}60;"></div></div>
-          </div>`).join("");
-  } catch(e) { console.error("Failed to load reports:", e); }
-}
+window.setView = v => {
+  $("view-tracker").style.display  = v === "tracker" ? "block" : "none";
+  $("view-reports").style.display  = v === "reports" ? "block" : "none";
+  $("nav-tracker").className = "nav-btn" + (v === "tracker" ? " on" : "");
+  $("nav-reports").className = "nav-btn" + (v === "reports" ? " on" : "");
+  $("topbar-title").textContent = v === "tracker" ? "Time Tracker" : "My Reports";
+  closeSidebar();
+};
 
 // ── Dropdowns ─────────────────────────────────────────────────────────────────
 window.toggleDrop = (e, id, btn) => {
   e.stopPropagation();
-  const drop = $(id), isOpen = drop.classList.contains("open");
+  const drop = $(id);
+  const isOpen = drop.classList.contains("open");
   document.querySelectorAll(".drop").forEach(d => d.classList.remove("open"));
   if (!isOpen) {
     const r = btn.getBoundingClientRect();
@@ -373,7 +375,7 @@ window.toggleDrop = (e, id, btn) => {
 };
 document.addEventListener("click", () => document.querySelectorAll(".drop").forEach(d => d.classList.remove("open")));
 
-// ── Project select ─────────────────────────────────────────────────────────────
+// ── Project select ────────────────────────────────────────────────────────────
 window.selectProj = id => {
   window.selectedProj = id;
   const chip = $("proj-chip"), txt = $("proj-chip-text");
@@ -391,18 +393,21 @@ window.selectProj = id => {
 };
 
 // ── Tags ──────────────────────────────────────────────────────────────────────
-window.toggleTag = t => {
+function toggleTag(t) {
   const idx = window.selectedTags.indexOf(t);
-  if (idx > -1) window.selectedTags.splice(idx, 1); else window.selectedTags.push(t);
+  if (idx > -1) window.selectedTags.splice(idx, 1);
+  else window.selectedTags.push(t);
   refreshTagsUI();
-};
+}
 function refreshTagsUI() {
   TAGS.forEach(t => {
     const chk = document.getElementById("chk-" + t.replace(/\s+/g, "-"));
-    if (!chk) return;
-    const on = window.selectedTags.includes(t);
-    chk.className = "check-box" + (on ? " checked" : "");
-    chk.innerHTML = on ? '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#0A0B0F" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg>' : "";
+    if (chk) {
+      chk.className = "check-box" + (window.selectedTags.includes(t) ? " checked" : "");
+      chk.innerHTML = window.selectedTags.includes(t)
+        ? '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#0A0B0F" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg>'
+        : "";
+    }
   });
   const chip = $("tags-chip"), txt = $("tags-chip-text");
   if (window.selectedTags.length > 0) { chip.classList.add("active"); txt.textContent = window.selectedTags.join(", "); }
@@ -411,7 +416,6 @@ function refreshTagsUI() {
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
 window.handleMainBtn = () => { if (window.timerStart) stopTimer(); else startTimer(); };
-
 window.startTimer = () => {
   window.timerStart = Date.now();
   $("timer-card").classList.add("recording");
@@ -424,12 +428,10 @@ window.startTimer = () => {
     updateTopStats();
   }, 1000);
 };
-
 window.stopTimer = async () => {
   if (!window.timerStart) return;
   clearInterval(window.timerInterval);
-  const end = new Date(), start = new Date(window.timerStart);
-  const dur = Math.floor((end - start) / 1000);
+  const end = new Date(), start = new Date(window.timerStart), dur = Math.floor((end - start) / 1000);
   const entryDesc = $("timer-desc").value || "Untitled";
   const entryProj = window.selectedProj;
   const entryTags = [...window.selectedTags];
@@ -441,7 +443,8 @@ window.stopTimer = async () => {
   $("main-btn").className = "start-btn go";
   $("main-btn").innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="#0A0B0F"><polygon points="5,3 19,12 5,21"/></svg>';
   resetInputs();
-  if (dur >= 0) await saveEntry({ desc: entryDesc, projectId: entryProj, tags: entryTags, start, end, duration: dur });
+  if (dur < 0) return;
+  await saveEntry({ desc: entryDesc, projectId: entryProj, tags: entryTags, start, end, duration: dur });
 };
 
 // ── Manual log ────────────────────────────────────────────────────────────────
@@ -480,29 +483,40 @@ async function saveEntry(e) {
   try {
     const res = await fetch(`${API}/api/entries`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...e, uid: window.currentUser.id,
+      body: JSON.stringify({
+        ...e, uid: window.currentUser.id,
         email: window.currentUser.email, userName: window.currentUser.name,
-        start: new Date(e.start).toISOString(), end: new Date(e.end).toISOString() }),
+        start: new Date(e.start).toISOString(), end: new Date(e.end).toISOString(),
+      }),
     });
     if (!res.ok) throw new Error(await res.text());
-    await loadEntries(window.currentUser);
-  } catch(err) { console.error("Failed to save entry:", err); alert("Failed to save entry. Make sure the server is running."); }
+    const saved = await res.json();
+    window.currentEntries.unshift(saved);
+    window.currentEntries.sort((a, b) => new Date(b.start) - new Date(a.start));
+    renderEntries(); renderReports(); updateTopStats();
+  } catch(err) {
+    console.error("Failed to save entry:", err);
+    alert("Failed to save entry. Make sure the server is running.");
+  }
 }
 
 window.deleteEntry = async id => {
   if (!confirm("Delete this entry?")) return;
   try {
     await fetch(`${API}/api/entries/${id}?uid=${window.currentUser.id}`, { method: "DELETE" });
-    await loadEntries(window.currentUser);
+    window.currentEntries = window.currentEntries.filter(e => e.id !== id);
+    renderEntries(); renderReports(); updateTopStats();
   } catch(err) { console.error("Failed to delete:", err); }
 };
 
 // ── Edit modal ────────────────────────────────────────────────────────────────
 window.openEdit = entry => {
-  $("edit-id").value    = entry.id;
-  $("edit-desc").value  = entry.desc || "";
-  $("edit-proj").value  = entry.projectId || "";
-  $("edit-date").value  = new Date(entry.start).toISOString().split("T")[0];
+  $("edit-id").value   = entry.id;
+  $("edit-desc").value = entry.desc || "";
+  $("edit-proj").value = entry.projectId || "";
+  const startDate = new Date(entry.start), endDate = new Date(entry.end);
+  window.editStartDate = startDate; window.editEndDate = endDate;
+  $("edit-date").value  = startDate.toISOString().split("T")[0];
   $("edit-start").value = toTimeStr(entry.start);
   $("edit-end").value   = toTimeStr(entry.end);
   $("edit-time-err").style.display = "none";
@@ -521,41 +535,39 @@ window.closeModal = () => $("edit-modal").classList.remove("open");
 window.updateEditDur = () => {
   const dateVal = $("edit-date").value, startVal = $("edit-start").value, endVal = $("edit-end").value;
   if (!dateVal || !startVal || !endVal) { $("edit-dur-display").textContent = "--:--:--"; return; }
-  const dur = Math.floor((new Date(dateVal+"T"+endVal) - new Date(dateVal+"T"+startVal)) / 1000);
+  const s = new Date(dateVal + "T" + startVal), e = new Date(dateVal + "T" + endVal);
+  const dur = Math.floor((e - s) / 1000);
   const el = $("edit-dur-display");
   el.textContent = dur >= 0 ? fmt(dur) : "--:--:--";
   el.style.color = dur >= 0 ? "var(--accent)" : "var(--red)";
 };
 window.saveEdit = async () => {
-  const id = $("edit-id").value, dateVal = $("edit-date").value;
-  const startVal = $("edit-start").value, endVal = $("edit-end").value;
+  const id = $("edit-id").value, dateVal = $("edit-date").value, startVal = $("edit-start").value, endVal = $("edit-end").value;
   if (!dateVal) { $("edit-time-err").textContent = "Please select a date."; $("edit-time-err").style.display = "block"; return; }
   if (!startVal || !endVal) { $("edit-time-err").textContent = "Please set start and end time."; $("edit-time-err").style.display = "block"; return; }
-  const newStart = new Date(dateVal+"T"+startVal), newEnd = new Date(dateVal+"T"+endVal);
+  const newStart = new Date(dateVal + "T" + startVal), newEnd = new Date(dateVal + "T" + endVal);
   const dur = Math.floor((newEnd - newStart) / 1000);
   if (dur < 0) { $("edit-time-err").textContent = "End must be after start."; $("edit-time-err").style.display = "block"; return; }
   const tags = [...document.querySelectorAll(".edit-tag-toggle.on")].map(b => b.dataset.tag);
   try {
     const res = await fetch(`${API}/api/entries/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uid: window.currentUser.id, desc: $("edit-desc").value,
-        projectId: $("edit-proj").value || null, tags,
-        start: newStart.toISOString(), end: newEnd.toISOString(), duration: dur }),
+      body: JSON.stringify({ uid: window.currentUser.id, desc: $("edit-desc").value, projectId: $("edit-proj").value || null, tags, start: newStart.toISOString(), end: newEnd.toISOString(), duration: dur }),
     });
     if (!res.ok) throw new Error(await res.text());
-    await loadEntries(window.currentUser);
+    const updated = await res.json();
+    const idx = window.currentEntries.findIndex(e => e.id === id);
+    if (idx !== -1) window.currentEntries[idx] = updated;
+    window.currentEntries.sort((a, b) => new Date(b.start) - new Date(a.start));
+    renderEntries(); renderReports(); updateTopStats();
     closeModal();
   } catch(err) { console.error("Failed to save edit:", err); alert("Failed to save. Make sure the server is running."); }
 };
 $("edit-modal").addEventListener("click", e => { if (e.target === $("edit-modal")) closeModal(); });
 
-// ── Expanded groups ───────────────────────────────────────────────────────────
-window.toggleGroup = safeKey => {
-  const key = decodeURIComponent(safeKey);
-  if (window.expandedGroups.has(key)) window.expandedGroups.delete(key);
-  else window.expandedGroups.add(key);
-  renderEntries();
-};
+// ── Expanded entry groups state ───────────────────────────────────────────────
+window.expandedGroups = new Set();
+function groupKey(e) { return (e.desc || "Untitled") + "||" + (e.projectId || ""); }
 
 // ── Resume entry ──────────────────────────────────────────────────────────────
 window.resumeEntry = entry => {
@@ -586,24 +598,33 @@ window.resumeEntry = entry => {
   startTimer();
 };
 
-// ── Render entries — server provides pre-grouped, pre-formatted data ───────────
+// ── Render entries ────────────────────────────────────────────────────────────
 function renderEntries() {
-  const days  = window.entryDays || [];
-  const list  = $("entry-list"), empty = $("empty-state");
-  if (!days.length) { list.innerHTML = ""; empty.style.display = "block"; return; }
+  const entries = window.currentEntries;
+  const list = $("entry-list"), empty = $("empty-state");
+  if (entries.length === 0) { list.innerHTML = ""; empty.style.display = "block"; return; }
   empty.style.display = "none";
 
-  list.innerHTML = days.map(day => {
-    const rowsHtml = day.groups.map(group => {
-      const first      = group.entries[0];
-      const isExpanded = window.expandedGroups.has(day.label + "||" + group.key);
-      const safeKey    = encodeURIComponent(day.label + "||" + group.key);
-      const color      = first.projectColor || "var(--bg4)";
+  const dayGroups = {};
+  entries.forEach(e => { const k = fmtDate(e.start); if (!dayGroups[k]) dayGroups[k] = []; dayGroups[k].push(e); });
 
-      const subRowsHtml = group.entries.map(e => `
+  list.innerHTML = Object.entries(dayGroups).map(([date, dayEntries]) => {
+    const dayTotal = dayEntries.reduce((s, e) => s + e.duration, 0);
+    const subGroups = {};
+    dayEntries.forEach(e => { const k = groupKey(e); if (!subGroups[k]) subGroups[k] = []; subGroups[k].push(e); });
+
+    const rowsHtml = Object.entries(subGroups).map(([gk, groupEntries]) => {
+      const first    = groupEntries[0];
+      const p        = first.projectId ? PROJECTS[first.projectId] : null;
+      const totalDur = groupEntries.reduce((s, e) => s + e.duration, 0);
+      const isExpanded  = window.expandedGroups.has(date + "||" + gk);
+      const hasMultiple = groupEntries.length > 1;
+      const safeGk = encodeURIComponent(date + "||" + gk);
+
+      const subRowsHtml = groupEntries.map(e => `
         <div style="display:flex;align-items:center;gap:12px;padding:8px 18px 8px 42px;border-top:1px solid var(--border);background:var(--bg0);">
-          <div class="mono" style="font-size:12px;color:var(--t2);flex:1;">${e.startFormatted} &#8212; ${e.endFormatted}</div>
-          <div class="mono" style="font-size:12px;color:var(--t1);min-width:72px;text-align:right;">${e.durationFormatted}</div>
+          <div class="mono" style="font-size:12px;color:var(--t2);flex:1;">${fmtTime(e.start)} — ${fmtTime(e.end)}</div>
+          <div class="mono" style="font-size:12px;color:var(--t1);min-width:72px;text-align:right;">${fmt(e.duration)}</div>
           <div style="display:flex;gap:2px;">
             <button class="ib" onclick="event.stopPropagation();openEdit(${JSON.stringify(e).replace(/"/g,"&quot;")})" title="Edit">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -616,61 +637,123 @@ function renderEntries() {
 
       return `
         <div>
-          <div class="entry-row" style="cursor:${group.hasMultiple?"pointer":"default"};" ${group.hasMultiple?`onclick="toggleGroup('${safeKey}')"`:`onclick=""`}>
-            <div class="entry-bar" style="background:${color}"></div>
+          <div class="entry-row" style="cursor:${hasMultiple?"pointer":"default"};" onclick="timeLogClicked(${JSON.stringify(first).replace(/"/g,"&quot;")}); ${hasMultiple?`toggleGroup('${safeGk}')`:``}">
+            <div class="entry-bar" style="background:${p?p.color:"var(--bg4)"}"></div>
             <div class="entry-body">
               <div style="display:flex;align-items:center;gap:7px;">
                 <div class="entry-desc">${first.desc||"Untitled"}</div>
-                ${group.hasMultiple?`<span style="font-size:10px;font-weight:600;color:var(--t2);background:var(--bg4);border:1px solid var(--border);border-radius:10px;padding:1px 7px;flex-shrink:0;">${group.entries.length}&#215;</span>`:""}
+                ${hasMultiple?`<span style="font-size:10px;font-weight:600;color:var(--t2);background:var(--bg4);border:1px solid var(--border);border-radius:10px;padding:1px 7px;flex-shrink:0;">${groupEntries.length}×</span>`:""}
               </div>
               <div class="entry-meta">
-                ${first.projectName?`<span class="entry-proj" style="color:${color}">${first.projectName}</span>`:""}
-                ${first.projectName&&first.tags?.length?`<span class="meta-dot">&middot;</span>`:""}
+                ${p?`<span class="entry-proj" style="color:${p.color}">${p.name}</span>`:""}
+                ${p&&first.tags?.length?`<span class="meta-dot">·</span>`:""}
                 ${(first.tags||[]).map(t=>`<span class="tag-pill">${t}</span>`).join("")}
               </div>
             </div>
-            ${!group.hasMultiple?`<div class="entry-time mono">${first.startFormatted} &#8212; ${first.endFormatted}</div>`:""}
-            <div class="entry-dur mono">${group.totalFormatted}</div>
+            ${!hasMultiple?`<div class="entry-time mono">${fmtTime(first.start)} — ${fmtTime(first.end)}</div>`:""}
+            <div class="entry-dur mono">${fmt(totalDur)}</div>
             <div class="row-acts" style="display:flex;gap:2px;">
               <button class="ib" onclick="event.stopPropagation();resumeEntry(${JSON.stringify(first).replace(/"/g,"&quot;")})" title="Resume">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5,3 19,12 5,21" fill="currentColor" stroke="none"/></svg>
               </button>
-              ${!group.hasMultiple?`
+              ${!hasMultiple?`
               <button class="ib" onclick="event.stopPropagation();openEdit(${JSON.stringify(first).replace(/"/g,"&quot;")})" title="Edit">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
               <button class="ib" onclick="event.stopPropagation();deleteEntry('${first.id}')" title="Delete">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
               </button>`:""}
-              ${group.hasMultiple?`
-              <button class="ib" onclick="event.stopPropagation();toggleGroup('${safeKey}')" title="${isExpanded?"Collapse":"Expand"} sessions" style="transition:transform .2s;transform:rotate(${isExpanded?"90":"0"}deg);">
+              ${hasMultiple?`
+              <button class="ib" onclick="event.stopPropagation();toggleGroup('${safeGk}')" title="${isExpanded?"Collapse":"Expand"} sessions" style="transition:transform .2s;transform:rotate(${isExpanded?"90":"0"}deg);">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
               </button>`:""}
             </div>
           </div>
-          ${group.hasMultiple&&isExpanded?subRowsHtml:""}
+          ${hasMultiple&&isExpanded?subRowsHtml:""}
         </div>`;
     }).join("");
 
     return `<div class="fadeIn">
       <div class="day-header">
         <div style="display:flex;align-items:center;gap:10px;">
-          <span class="day-label">${day.label}</span>
-          <span class="day-count">${day.entryCount} ${day.entryCount===1?"entry":"entries"}</span>
+          <span class="day-label">${date}</span>
+          <span class="day-count">${dayEntries.length} ${dayEntries.length===1?"entry":"entries"}</span>
         </div>
-        <span class="day-total mono">${day.totalFormatted}</span>
+        <span class="day-total mono">${fmtShort(dayTotal)}</span>
       </div>
       <div class="entries-card">${rowsHtml}</div>
     </div>`;
   }).join("");
 }
 
+window.toggleGroup = safeGk => {
+  const gk = decodeURIComponent(safeGk);
+  if (window.expandedGroups.has(gk)) window.expandedGroups.delete(gk);
+  else window.expandedGroups.add(gk);
+  renderEntries();
+};
+
+// timeLogClicked kept for onclick compatibility (no-op when hasMultiple handles it)
+window.timeLogClicked = () => {};
+
+// ── Top stats ─────────────────────────────────────────────────────────────────
+function updateTopStats() {
+  const entries = window.currentEntries;
+  const ws = weekStart();
+  const liveExtra = window.timerStart ? Math.floor((Date.now() - window.timerStart) / 1000) : 0;
+  const todayBase = entries.filter(e => new Date(e.start).toDateString() === new Date().toDateString()).reduce((s, e) => s + e.duration, 0);
+  const weekBase  = entries.filter(e => new Date(e.start) >= ws).reduce((s, e) => s + e.duration, 0);
+  $("stat-today").textContent = fmt(todayBase + liveExtra);
+  $("stat-week").textContent  = fmt(weekBase  + liveExtra);
+}
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+function renderReports() {
+  const entries  = window.currentEntries;
+  const totalAll = entries.reduce((s, e) => s + e.duration, 0);
+  const uniqueDays = Object.keys(entries.reduce((a, e) => { a[new Date(e.start).toDateString()] = 1; return a; }, {})).length;
+  const byProj = Object.entries(PROJECTS).map(([id, p]) => ({
+    id, ...p,
+    total: entries.filter(e => e.projectId === id).reduce((s, e) => s + e.duration, 0),
+    count: entries.filter(e => e.projectId === id).length,
+  })).filter(p => p.total > 0).sort((a, b) => b.total - a.total);
+  const grand = byProj.reduce((s, p) => s + p.total, 0);
+
+  $("r-total").textContent    = fmt(totalAll);
+  $("r-entries").textContent  = `${entries.length} entries`;
+  $("r-projects").textContent = byProj.length;
+  $("r-avg").textContent      = fmtShort(Math.round(totalAll / Math.max(1, uniqueDays)));
+  $("r-grand").textContent    = fmt(grand) + " total";
+
+  $("r-proj-rows").innerHTML = byProj.length === 0
+    ? `<div style="padding:48px;text-align:center;color:var(--t2);font-size:13px;">No data yet</div>`
+    : byProj.map(p => {
+        const pct = grand > 0 ? (p.total / grand) * 100 : 0;
+        return `<div class="proj-row">
+          <div class="proj-row-top">
+            <div class="proj-row-left">
+              <span class="proj-glow-dot" style="background:${p.color};box-shadow:0 0 7px ${p.color}90;"></span>
+              <span class="proj-name">${p.name}</span>
+              <span class="proj-count">${p.count} ${p.count===1?"entry":"entries"}</span>
+            </div>
+            <div class="proj-row-right">
+              <span class="proj-pct">${Math.round(pct)}%</span>
+              <span class="proj-dur mono">${fmt(p.total)}</span>
+            </div>
+          </div>
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${p.color};box-shadow:0 0 8px ${p.color}60;"></div></div>
+        </div>`;
+      }).join("");
+}
+
+// ── Reset inputs ──────────────────────────────────────────────────────────────
 function resetInputs() {
   $("timer-desc").value = "";
   window.selectedProj = null; window.selectedTags = [];
   selectProj(null); refreshTagsUI();
 }
 
+// ── Boot: load config first, then restore any existing session ────────────────
 loadConfig();
 </script>
 </body>
