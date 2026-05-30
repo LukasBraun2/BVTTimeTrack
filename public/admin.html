@@ -101,6 +101,56 @@
   .c-academy{color:#818CF8;} .bg-academy{background:rgba(129,140,248,.15);border-color:rgba(129,140,248,.4);}
   .c-volunteer{color:#22C97A;} .bg-volunteer{background:rgba(34,201,122,.15);border-color:rgba(34,201,122,.4);}
   .c-module5{color:#F5A623;} .bg-module5{background:rgba(245,166,35,.15);border-color:rgba(245,166,35,.4);}
+
+  /* ── Tablet (≤900px) ── */
+  @media(max-width:900px){
+    .stats-bar{grid-template-columns:repeat(2,1fr);padding:16px 16px 0;}
+    .controls{padding:14px 16px;flex-wrap:wrap;}
+    .search-wrap{max-width:100%;flex:1 1 100%;}
+    .table-wrap{padding:0 16px 24px;}
+    header{padding:0 16px;}
+    .student-stats{gap:12px;}
+    .sstats-item:nth-child(-n+3){display:none;} /* hide project breakdown cols, keep total+entries */
+    .entry-time{min-width:90px;}
+    .entry-dur{min-width:58px;}
+  }
+
+  /* ── Mobile (≤600px) ── */
+  @media(max-width:600px){
+    .login-card{width:calc(100vw - 32px);padding:28px 24px;}
+    .stats-bar{grid-template-columns:repeat(2,1fr);gap:10px;padding:12px 12px 0;}
+    .stat-card{padding:14px 14px;}
+    .stat-val{font-size:20px;}
+    .controls{padding:10px 12px;gap:8px;}
+    .filter-select{flex:1;}
+    .table-wrap{padding:0 12px 20px;}
+    header{padding:0 12px;height:48px;}
+    header h1{font-size:13px;}
+    .admin-chip{display:none;}
+    .last-updated-wrap{display:none;}
+    .signout-btn{padding:5px 10px;font-size:11px;}
+
+    /* Student card header stacks avatar+info on top, stats below */
+    .student-header{flex-wrap:wrap;gap:10px;padding:12px 14px;}
+    .student-info{flex:1;}
+    .student-stats{
+      width:100%;
+      border-top:1px solid var(--border);
+      padding-top:10px;
+      margin-top:2px;
+      justify-content:flex-start;
+      gap:16px;
+    }
+    .sstats-item{display:block !important;text-align:left;}
+    .chevron{align-self:flex-start;margin-top:4px;}
+
+    /* Entry rows: stack desc above time */
+    .entry-row{flex-wrap:wrap;gap:6px;padding:10px 12px;}
+    .entry-dot{height:20px;align-self:flex-start;margin-top:3px;}
+    .entry-desc{flex:1 1 calc(100% - 20px);}
+    .entry-time{min-width:unset;text-align:left;width:100%;padding-left:15px;}
+    .entry-dur{min-width:unset;text-align:left;}
+  }
 </style>
 </head>
 <body>
@@ -136,7 +186,7 @@
       <h1>Tempo — Admin</h1>
     </div>
     <div class="header-right">
-      <span id="last-updated" style="font-size:11px;color:var(--t2);"></span>
+      <div class="last-updated-wrap"><span id="last-updated" style="font-size:11px;color:var(--t2);"></span></div>
       <span class="admin-chip" id="admin-email"></span>
       <button class="signout-btn" onclick="signOutAdmin()">Sign out</button>
     </div>
