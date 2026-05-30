@@ -601,7 +601,7 @@ function renderEntries() {
       const color      = first.projectColor || "var(--bg4)";
 
       const subRowsHtml = group.entries.map(e => `
-        <div style="display:flex;align-items:center;gap:12px;padding:8px 18px 8px 42px;border-top:1px solid var(--border);background:var(--bg0);">
+        <div style="display:flex;align-items:center;gap:12px;padding:8px 18px 8px 42px;border-top:1px solid var(--border);background:var(--bg0);cursor:pointer;" onclick="openEdit(${JSON.stringify(e).replace(/"/g,"&quot;")})">
           <div class="mono" style="font-size:12px;color:var(--t2);flex:1;">${e.startFormatted} &#8212; ${e.endFormatted}</div>
           <div class="mono" style="font-size:12px;color:var(--t1);min-width:72px;text-align:right;">${e.durationFormatted}</div>
           <div style="display:flex;gap:2px;">
@@ -616,7 +616,7 @@ function renderEntries() {
 
       return `
         <div>
-          <div class="entry-row" style="cursor:${group.hasMultiple?"pointer":"default"};" ${group.hasMultiple?`onclick="toggleGroup('${safeKey}')"`:`onclick=""`}>
+          <div class="entry-row" style="cursor:pointer;" ${group.hasMultiple?`onclick="toggleGroup('${safeKey}')"`:`onclick="openEdit(${JSON.stringify(first).replace(/"/g,"&quot;")})"`}>
             <div class="entry-bar" style="background:${color}"></div>
             <div class="entry-body">
               <div style="display:flex;align-items:center;gap:7px;">
