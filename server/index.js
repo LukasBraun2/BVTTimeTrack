@@ -201,6 +201,65 @@ function requireAdmin(req, res, next) {
 }
 
 // ── Entries: CRUD ─────────────────────────────────────────────────────────────
+const fmtSec = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
+const fmtShort = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; };
+const fmtTime  = d => new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+const fmtDate  = d => { const t=new Date(),y=new Date(t); y.setDate(y.getDate()-1); const dd=new Date(d); if(dd.toDateString()===t.toDateString())return"Today"; if(dd.toDateString()===y.toDateString())return"Yesterday"; return dd.toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"}); };
+
+// /api/entries/list/:uid — grouped+formatted data for the tracker view
+app.get("/api/entries/list/:uid", (req, res) => {
+  const entries = db.entries.filter(e => e.uid === req.params.uid)
+    .sort((a, b) => new Date(b.start) - new Date(a.start));
+  const dayMap = {};
+  entries.forEach(e => {
+    const label = fmtDate(e.start);
+    if (!dayMap[label]) dayMap[label] = [];
+    const p = e.projectId ? PROJECTS[e.projectId] : null;
+    dayMap[label].push({ ...e, startFormatted: fmtTime(e.start), endFormatted: fmtTime(e.end),
+      durationFormatted: fmtSec(e.duration), projectName: p?.name||null, projectColor: p?.color||null });
+  });
+  const days = Object.entries(dayMap).map(([label, dayEntries]) => {
+    const groupMap = {};
+    dayEntries.forEach(e => { const k=(e.desc||"Untitled")+"||"+(e.projectId||""); if(!groupMap[k])groupMap[k]=[]; groupMap[k].push(e); });
+    const groups = Object.entries(groupMap).map(([key, ge]) => ({
+      key, hasMultiple: ge.length>1,
+      totalFormatted: fmtSec(ge.reduce((s,e)=>s+e.duration,0)),
+      entries: ge,
+    }));
+    return { label, entryCount: dayEntries.length, totalFormatted: fmtShort(dayEntries.reduce((s,e)=>s+e.duration,0)), groups };
+  });
+  res.json(days);
+});
+
+// /api/entries/stats/:uid — today + week seconds for the topbar
+app.get("/api/entries/stats/:uid", (req, res) => {
+  const entries = db.entries.filter(e => e.uid === req.params.uid);
+  const now = new Date(), ws = new Date(now);
+  ws.setDate(now.getDate()-now.getDay()); ws.setHours(0,0,0,0);
+  res.json({
+    todaySeconds: entries.filter(e=>new Date(e.start).toDateString()===now.toDateString()).reduce((s,e)=>s+e.duration,0),
+    weekSeconds:  entries.filter(e=>new Date(e.start)>=ws).reduce((s,e)=>s+e.duration,0),
+  });
+});
+
+// /api/entries/reports/:uid — aggregated data for the reports view
+app.get("/api/entries/reports/:uid", (req, res) => {
+  const entries = db.entries.filter(e => e.uid === req.params.uid);
+  const total = entries.reduce((s,e)=>s+e.duration,0);
+  const uniqueDays = new Set(entries.map(e=>new Date(e.start).toDateString())).size;
+  const byProj = Object.entries(PROJECTS).map(([id,p]) => {
+    const pe = entries.filter(e=>e.projectId===id);
+    return { id, ...p, total: pe.reduce((s,e)=>s+e.duration,0), count: pe.length };
+  }).filter(p=>p.total>0).sort((a,b)=>b.total-a.total);
+  const grand = byProj.reduce((s,p)=>s+p.total,0);
+  res.json({
+    totalFormatted: fmtSec(total), entryCount: entries.length,
+    activeProjects: byProj.length, avgDailyFormatted: fmtShort(Math.round(total/Math.max(1,uniqueDays))),
+    grandFormatted: fmtSec(grand),
+    projects: byProj.map(p=>({ ...p, totalFormatted: fmtSec(p.total), pct: grand>0?Math.round(p.total/grand*100):0 })),
+  });
+});
+
 app.get("/api/entries", (req, res) => {
   const { uid } = req.query;
   if (!uid) return res.status(400).json({ error: "uid required" });
