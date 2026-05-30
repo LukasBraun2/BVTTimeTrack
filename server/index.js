@@ -41,7 +41,7 @@ const newId = () => crypto.randomUUID();
 // ── Validate env ──────────────────────────────────────────────────────────────
 const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const BASE_URL             = process.env.BASE_URL || `http://localhost:${PORT}`;
+const BASE_URL             = process.env.BASE_URL || "https://bvttimetrack.onrender.com";
 const SESSION_SECRET       = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
