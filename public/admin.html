@@ -17,12 +17,12 @@
       </div>
       <span class="logo-text">Tempo</span>
     </div>
-    <div class="badge-admin">⬡ Admin Portal</div>
+    <div class="badge-admin">&#x2B21; Admin Portal</div>
     <h1>Instructor access</h1>
     <p>Enter the admin password to view all student time tracking reports.</p>
     <div class="field">
       <label>Password</label>
-      <input type="password" id="pw-input" placeholder="••••••••" onkeydown="if(event.key==='Enter')tryLogin()"/>
+      <input type="password" id="pw-input" placeholder="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;" onkeydown="if(event.key==='Enter')tryLogin()"/>
     </div>
     <div class="err" id="pw-err"></div>
     <button class="login-btn" id="login-btn" onclick="tryLogin()">Sign in</button>
@@ -36,7 +36,7 @@
       <div class="brand-icon">
         <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="#0A0B0F" stroke-width="1.6"/><path d="M7 4v3.5l2 1.5" stroke="#0A0B0F" stroke-width="1.6" stroke-linecap="round"/></svg>
       </div>
-      <h1>Tempo — Admin</h1>
+      <h1>Tempo &#x2014; Admin</h1>
     </div>
     <div class="header-right">
       <div class="last-updated-wrap"><span id="last-updated" style="font-size:11px;color:var(--t2);"></span></div>
@@ -46,18 +46,18 @@
   </header>
 
   <div class="stats-bar">
-    <div class="stat-card"><div class="stat-label">Total students</div><div class="stat-val mono" id="stat-students">—</div><div class="stat-sub">logged in</div></div>
-    <div class="stat-card"><div class="stat-label">Hours this week</div><div class="stat-val mono" id="stat-week">—</div><div class="stat-sub">across all students</div></div>
-    <div class="stat-card"><div class="stat-label">Total entries</div><div class="stat-val mono" id="stat-entries">—</div><div class="stat-sub">all time</div></div>
-    <div class="stat-card"><div class="stat-label">Avg this week</div><div class="stat-val mono" id="stat-avg">—</div><div class="stat-sub">per active student</div></div>
+    <div class="stat-card"><div class="stat-label">Total students</div><div class="stat-val mono" id="stat-students">&#x2014;</div><div class="stat-sub">logged in</div></div>
+    <div class="stat-card"><div class="stat-label">Hours this week</div><div class="stat-val mono" id="stat-week">&#x2014;</div><div class="stat-sub">across all students</div></div>
+    <div class="stat-card"><div class="stat-label">Total entries</div><div class="stat-val mono" id="stat-entries">&#x2014;</div><div class="stat-sub">all time</div></div>
+    <div class="stat-card"><div class="stat-label">Avg this week</div><div class="stat-val mono" id="stat-avg">&#x2014;</div><div class="stat-sub">per active student</div></div>
   </div>
 
   <div class="controls">
     <div class="search-wrap">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" placeholder="Search students…" id="search-input" oninput="debouncedLoad()"/>
+      <input type="text" placeholder="Search students..." id="search-input" oninput="debouncedLoad()"/>
     </div>
-    <!-- Project filter options injected from /api/config -->
+    <!-- Project filter options injected from /api/config/ui -->
     <select class="filter-select" id="proj-filter" onchange="loadData()">
       <option value="">All projects</option>
     </select>
@@ -68,56 +68,37 @@
   </div>
 
   <div class="table-wrap">
-    <div id="student-list"><div class="loading">Loading student data…</div></div>
+    <div id="student-list"><div class="loading">Loading student data...</div></div>
   </div>
 </div>
 
 <script>
 const API = window.location.origin;
 
-// ── App constants — fetched from /api/config ──────────────────────────────────
-let PROJECTS = {};
-
-async function loadConfig() {
-  try {
-    const res = await fetch(`${API}/api/config`);
-    const cfg = await res.json();
-    PROJECTS = cfg.projects;
-
-    // Populate project filter <select>
-    const sel = document.getElementById("proj-filter");
-    Object.entries(PROJECTS).forEach(([id, p]) => {
-      const opt = document.createElement("option");
-      opt.value = id; opt.textContent = p.name;
-      sel.appendChild(opt);
-    });
-  } catch (e) {
-    console.error("Failed to load config:", e);
-  }
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const fmt          = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
-const fmtShort     = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; };
-const fmtTime      = d => new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-const fmtDateShort = d => new Date(d).toLocaleDateString([],{month:"short",day:"numeric"});
-const initials     = name => (name||"?").split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase();
-const COLORS       = ["#818CF8","#22C97A","#F5A623","#38BDF8","#F472B6","#FB923C","#A78BFA","#34D399"];
-const userColor    = email => COLORS[Math.abs([...email].reduce((a,c)=>a+c.charCodeAt(0),0))%COLORS.length];
+// Avatar color helper (no PROJECTS needed here — colors come from server)
+const COLORS   = ["#818CF8","#22C97A","#F5A623","#38BDF8","#F472B6","#FB923C","#A78BFA","#34D399"];
+const userColor = email => COLORS[Math.abs([...email].reduce((a,c)=>a+c.charCodeAt(0),0))%COLORS.length];
+const initials  = name => (name||"?").split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase();
 
 let expandedUsers = new Set();
 
-// ── Login — now sets a server-side session cookie ─────────────────────────────
+async function loadConfig() {
+  try {
+    const res = await fetch(`${API}/api/config/ui`);
+    const ui  = await res.json();
+    document.getElementById("proj-filter").innerHTML =
+      `<option value="">All projects</option>` + ui.adminProjOptions;
+  } catch(e) { console.error("Failed to load config:", e); }
+}
+
+// ── Login ─────────────────────────────────────────────────────────────────────
 window.tryLogin = async () => {
   const pw  = document.getElementById("pw-input").value;
   const err = document.getElementById("pw-err");
   const btn = document.getElementById("login-btn");
-
   err.textContent = "";
   if (!pw) { err.textContent = "Please enter the admin password."; return; }
-
-  btn.disabled = true; btn.textContent = "Signing in…";
-
+  btn.disabled = true; btn.textContent = "Signing in...";
   try {
     const res = await fetch(`${API}/api/auth/admin`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -125,7 +106,7 @@ window.tryLogin = async () => {
     });
     if (!res.ok) throw new Error("wrong");
     showApp();
-  } catch (e) {
+  } catch(e) {
     err.textContent = "Incorrect password. Try again.";
     btn.disabled = false; btn.textContent = "Sign in";
     document.getElementById("pw-input").value = "";
@@ -144,7 +125,6 @@ function showApp() {
   loadData();
 }
 
-// Auto-restore: check if session is still valid on load
 (async function checkSession() {
   try {
     const res = await fetch(`${API}/api/auth/admin/check`);
@@ -153,53 +133,46 @@ function showApp() {
   } catch {}
 })();
 
-// ── Data loading — all aggregation happens server-side ────────────────────────
+// ── Data loading ──────────────────────────────────────────────────────────────
 async function loadStats() {
   try {
     const res = await fetch(`${API}/api/admin/stats`);
     if (!res.ok) { signOutAdmin(); return; }
     const s = await res.json();
     document.getElementById("stat-students").textContent = s.totalStudents;
-    document.getElementById("stat-week").textContent     = fmtShort(s.weekSeconds);
+    document.getElementById("stat-week").textContent     = s.weekFormatted;
     document.getElementById("stat-entries").textContent  = s.totalEntries;
-    document.getElementById("stat-avg").textContent      = fmtShort(s.avgWeekSeconds);
-  } catch (e) { console.error("Failed to load stats:", e); }
+    document.getElementById("stat-avg").textContent      = s.avgWeekFormatted;
+  } catch(e) { console.error("Failed to load stats:", e); }
 }
 
 async function loadStudents() {
   const search  = document.getElementById("search-input").value;
   const project = document.getElementById("proj-filter").value;
   const period  = document.getElementById("week-filter").value;
-
-  const params = new URLSearchParams({ project, period, search });
   try {
-    const res = await fetch(`${API}/api/admin/students?${params}`);
+    const res = await fetch(`${API}/api/admin/students?` + new URLSearchParams({ project, period, search }));
     if (!res.ok) { signOutAdmin(); return; }
     const students = await res.json();
     renderStudents(students, period);
     document.getElementById("last-updated").textContent =
-      "Updated " + new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-  } catch (e) {
+      "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch(e) {
     console.error("Failed to load students:", e);
     document.getElementById("student-list").innerHTML = '<div class="loading">Failed to load. Is the server running?</div>';
   }
 }
 
-function loadData() {
-  loadStats();
-  loadStudents();
-}
+function loadData() { loadStats(); loadStudents(); }
 
-// Debounce search input so we don't fire on every keystroke
 let searchTimer;
 function debouncedLoad() { clearTimeout(searchTimer); searchTimer = setTimeout(loadStudents, 250); }
 
-// Auto-refresh every 30 s
 setInterval(() => {
   if (document.getElementById("app").style.display !== "none") loadData();
 }, 30000);
 
-// ── Render — pure presentation, no aggregation ────────────────────────────────
+// ── Render — all aggregation and formatting done server-side ──────────────────
 function renderStudents(students, period) {
   if (students.length === 0) {
     document.getElementById("student-list").innerHTML = '<div class="loading">No students found.</div>';
@@ -211,34 +184,28 @@ function renderStudents(students, period) {
     const col    = userColor(u.email);
 
     const projBreakdownHtml = u.projBreakdown.length > 0
-      ? `<div class="proj-bar">${u.projBreakdown.map(([pid, secs]) => {
-          const p = PROJECTS[pid];
-          return p ? `<span class="proj-pill bg-${p.cls} c-${p.cls}">${p.name} · ${fmtShort(secs)}</span>` : "";
-        }).join("")}</div>`
+      ? `<div class="proj-bar">${u.projBreakdown.map(p =>
+          `<span class="proj-pill bg-${p.cls} c-${p.cls}">${p.name} &middot; ${p.formatted}</span>`
+        ).join("")}</div>`
       : "";
 
-    const entryRows = u.entries.map(e => {
-      const p = PROJECTS[e.projectId];
-      return `
-        <div class="entry-row">
-          <div class="entry-dot" style="background:${p?.color||"#444"}"></div>
-          <div style="flex:1;min-width:0;">
-            <div class="entry-desc">${e.desc||"Untitled"}</div>
-            <div style="display:flex;gap:5px;margin-top:3px;flex-wrap:wrap;">
-              ${p?`<span style="font-size:11px;color:${p.color};font-weight:500;">${p.name}</span>`:""}
-              ${(e.tags||[]).map(t=>`<span class="tag-pill">${t}</span>`).join("")}
-            </div>
+    const entryRows = u.entries.map(e => `
+      <div class="entry-row">
+        <div class="entry-dot" style="background:${e.projectColor||"#444"}"></div>
+        <div style="flex:1;min-width:0;">
+          <div class="entry-desc">${e.desc||"Untitled"}</div>
+          <div style="display:flex;gap:5px;margin-top:3px;flex-wrap:wrap;">
+            ${e.projectName?`<span style="font-size:11px;color:${e.projectColor};font-weight:500;">${e.projectName}</span>`:""}
+            ${(e.tags||[]).map(t=>`<span class="tag-pill">${t}</span>`).join("")}
           </div>
-          <div class="entry-time mono">${fmtDateShort(e.start)} · ${fmtTime(e.start)}–${fmtTime(e.end)}</div>
-          <div class="entry-dur mono">${fmt(e.duration)}</div>
-        </div>`;
-    }).join("");
+        </div>
+        <div class="entry-time mono">${e.dateShort} &middot; ${e.startFormatted}&ndash;${e.endFormatted}</div>
+        <div class="entry-dur mono">${e.durationFormatted}</div>
+      </div>`).join("");
 
-    // Top-3 project breakdown columns in student header
-    const projCols = u.projBreakdown.slice(0, 3).map(([pid, secs]) => {
-      const p = PROJECTS[pid];
-      return p ? `<div class="sstats-item"><div class="sstats-label">${p.name}</div><div class="sstats-val mono" style="color:${p.color}">${fmtShort(secs)}</div></div>` : "";
-    }).join("");
+    const projCols = u.projBreakdown.slice(0, 3).map(p =>
+      `<div class="sstats-item"><div class="sstats-label">${p.name}</div><div class="sstats-val mono" style="color:${p.color}">${p.formatted}</div></div>`
+    ).join("");
 
     return `
       <div class="student-card fadeIn">
@@ -252,7 +219,7 @@ function renderStudents(students, period) {
             ${projCols}
             <div class="sstats-item">
               <div class="sstats-label">${period==="week"?"This week":"Total"}</div>
-              <div class="sstats-val mono">${fmtShort(u.totalSeconds)}</div>
+              <div class="sstats-val mono">${u.totalFormatted}</div>
             </div>
             <div class="sstats-item">
               <div class="sstats-label">Entries</div>
@@ -276,7 +243,6 @@ window.toggleStudent = uid => {
   loadStudents();
 };
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
 loadConfig();
 </script>
 </body>
