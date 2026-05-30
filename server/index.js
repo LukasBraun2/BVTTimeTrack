@@ -1,12 +1,12 @@
 require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") });
 
-const express      = require("express");
-const session      = require("express-session");
-const passport     = require("passport");
-const GoogleStrat  = require("passport-google-oauth20").Strategy;
-const path         = require("path");
-const crypto       = require("crypto");
-const fs           = require("fs");
+const express     = require("express");
+const session     = require("express-session");
+const passport    = require("passport");
+const GoogleStrat = require("passport-google-oauth20").Strategy;
+const path        = require("path");
+const crypto      = require("crypto");
+const fs          = require("fs");
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT        = process.env.PORT || 3000;
@@ -15,6 +15,19 @@ const DB_PATH     = path.join(DATA_DIR, "tempo.json");
 const CONFIG_PATH = path.join(DATA_DIR, "config.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// ── App-wide constants (single source of truth, served to clients) ────────────
+const PROJECTS = {
+  academy:   { name: "Academy",   color: "#818CF8", cls: "academy"  },
+  volunteer: { name: "Volunteer", color: "#22C97A", cls: "volunteer" },
+  module5:   { name: "Module 5",  color: "#F5A623", cls: "module5"  },
+};
+
+const TAGS = [
+  "Class Attendance", "Coding", "freecodecamp", "general study time",
+  "HTML and CSS Tutorial", "interview prep", "JS tutorials", "Khan Academy",
+  "online lecture", "Outlining / Wireframes", "WIX assignment",
+];
 
 // ── Load / create config ──────────────────────────────────────────────────────
 let config = { adminPassword: "admin123" };
@@ -68,7 +81,6 @@ passport.use(new GoogleStrat(
       db.users.push(user);
       saveDB();
     } else {
-      // Refresh name/photo in case they changed
       let changed = false;
       if (user.name !== name)   { user.name  = name;  changed = true; }
       if (user.photo !== photo) { user.photo = photo; changed = true; }
@@ -98,27 +110,41 @@ app.use(passport.initialize());
 app.use(passport.session());
 app.use(express.static(path.join(__dirname, "..", "public")));
 
+// ── Shared app config (replaces duplicated constants in every HTML file) ──────
+app.get("/api/config", (_req, res) => {
+  res.json({ projects: PROJECTS, tags: TAGS });
+});
+
 // ── Auth routes ───────────────────────────────────────────────────────────────
 app.get("/auth/google",
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
 
+// OAuth callback: supports popup postMessage flow and plain redirect fallback.
+// The inline script is kept minimal — just route-selection logic.
 app.get("/auth/google/callback",
   passport.authenticate("google", { failureRedirect: "/?error=auth_failed" }),
   (req, res) => {
-    // Send a small page that passes the user back to the opener window (popup flow)
-    // or just redirects (redirect flow). We support both.
-    const user = { id: req.user.id, email: req.user.email, name: req.user.name, photo: req.user.photo };
+    const user = {
+      id:    req.user.id,
+      email: req.user.email,
+      name:  req.user.name,
+      photo: req.user.photo,
+    };
+    // Encoded once here so the inline script never needs to do JSON.stringify
+    const userJson = JSON.stringify(user).replace(/</g, "\\u003c");
     res.send(`<!DOCTYPE html><html><body><script>
-      const u = ${JSON.stringify(user)};
-      if (window.opener) {
-        window.opener.postMessage({ type: "GOOGLE_AUTH_SUCCESS", user: u }, "${BASE_URL}");
-        window.close();
-      } else {
-        localStorage.setItem("tempo_user", JSON.stringify(u));
-        window.location.href = "/";
-      }
-    </script></body></html>`);
+(function(){
+  var u=${userJson};
+  if(window.opener){
+    window.opener.postMessage({type:"GOOGLE_AUTH_SUCCESS",user:u},"${BASE_URL}");
+    window.close();
+  }else{
+    localStorage.setItem("tempo_user",JSON.stringify(u));
+    window.location.href="/";
+  }
+})();
+</script></body></html>`);
   }
 );
 
@@ -135,20 +161,30 @@ app.post("/auth/logout", (req, res) => {
   req.logout(() => res.json({ ok: true }));
 });
 
-// ── Admin auth ────────────────────────────────────────────────────────────────
+// ── Admin auth — session-based (no more password in query strings) ────────────
 app.post("/api/auth/admin", (req, res) => {
   const { password } = req.body;
-  if (password === config.adminPassword) res.json({ ok: true });
-  else res.status(401).json({ error: "Wrong password" });
+  if (password !== config.adminPassword)
+    return res.status(401).json({ error: "Wrong password" });
+  req.session.isAdmin = true;
+  res.json({ ok: true });
 });
 
-// ── Entries: CRUD ─────────────────────────────────────────────────────────────
-function requireUser(req, res) {
-  // Accept session-based OR uid-in-body (for backward compat)
-  if (req.isAuthenticated()) return req.user;
-  return null;
+app.post("/api/auth/admin/logout", (req, res) => {
+  req.session.isAdmin = false;
+  res.json({ ok: true });
+});
+
+app.get("/api/auth/admin/check", (req, res) => {
+  res.json({ ok: !!req.session.isAdmin });
+});
+
+function requireAdmin(req, res, next) {
+  if (req.session.isAdmin) return next();
+  return res.status(401).json({ error: "Unauthorized" });
 }
 
+// ── Entries: CRUD ─────────────────────────────────────────────────────────────
 app.get("/api/entries", (req, res) => {
   const { uid } = req.query;
   if (!uid) return res.status(400).json({ error: "uid required" });
@@ -160,7 +196,8 @@ app.get("/api/entries", (req, res) => {
 
 app.post("/api/entries", (req, res) => {
   const { uid, email, userName, desc, projectId, tags, start, end, duration } = req.body;
-  if (!uid || !start || !end || duration == null) return res.status(400).json({ error: "Missing fields" });
+  if (!uid || !start || !end || duration == null)
+    return res.status(400).json({ error: "Missing fields" });
   const entry = {
     id: newId(), uid, email: email || "", userName: userName || "",
     desc: desc || "Untitled", projectId: projectId || null,
@@ -200,10 +237,121 @@ app.delete("/api/entries/:id", (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Admin: all entries ────────────────────────────────────────────────────────
-app.get("/api/admin/entries", (req, res) => {
-  const { adminPassword } = req.query;
-  if (adminPassword !== config.adminPassword) return res.status(401).json({ error: "Unauthorized" });
+// ── Admin: aggregated stats ───────────────────────────────────────────────────
+// Moves all the stat computation that was happening client-side in admin.html.
+app.get("/api/admin/stats", requireAdmin, (req, res) => {
+  const now = new Date();
+  const ws  = new Date(now);
+  ws.setDate(now.getDate() - now.getDay());
+  ws.setHours(0, 0, 0, 0);
+
+  const weekEntries = db.entries.filter(e => new Date(e.start) >= ws);
+  const allUids     = [...new Set(db.entries.map(e => e.uid))];
+  const weekUids    = [...new Set(weekEntries.map(e => e.uid))];
+  const weekSecs    = weekEntries.reduce((s, e) => s + e.duration, 0);
+  const avgSecs     = weekUids.length > 0 ? Math.round(weekSecs / weekUids.length) : 0;
+
+  res.json({
+    totalStudents:  allUids.length,
+    weekSeconds:    weekSecs,
+    totalEntries:   db.entries.length,
+    avgWeekSeconds: avgSecs,
+  });
+});
+
+// ── Admin: students view (grouped, filtered, sorted server-side) ──────────────
+// Accepts: ?project=academy|volunteer|module5  &period=week|all  &search=text
+// Returns an array of student objects, each with their filtered entry list and
+// pre-computed totals — so admin.html only has to render, not aggregate.
+app.get("/api/admin/students", requireAdmin, (req, res) => {
+  const { project = "", period = "week", search = "" } = req.query;
+
+  const now = new Date();
+  const ws  = new Date(now);
+  ws.setDate(now.getDate() - now.getDay());
+  ws.setHours(0, 0, 0, 0);
+
+  // Build per-user buckets
+  const byUser = {};
+  db.entries.forEach(e => {
+    const user = db.users.find(u => u.id === e.uid);
+    if (!byUser[e.uid]) {
+      byUser[e.uid] = {
+        uid:     e.uid,
+        email:   e.email || user?.email || "",
+        name:    e.userName || user?.name || e.email || "Unknown",
+        photo:   user?.photo || null,
+        entries: [],
+      };
+    }
+    byUser[e.uid].entries.push({ ...e, userName: byUser[e.uid].name });
+  });
+
+  let students = Object.values(byUser);
+
+  // Text search
+  if (search) {
+    const q = search.toLowerCase();
+    students = students.filter(u =>
+      u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+    );
+  }
+
+  // Project filter
+  if (project) {
+    students = students.filter(u => u.entries.some(e => e.projectId === project));
+  }
+
+  // Period filter + project filter applied to each student's entry list
+  students = students.map(u => {
+    let entries = period === "week"
+      ? u.entries.filter(e => new Date(e.start) >= ws)
+      : u.entries;
+    if (project) entries = entries.filter(e => e.projectId === project);
+
+    // Sort entries newest-first
+    entries = entries.slice().sort((a, b) => new Date(b.start) - new Date(a.start));
+
+    // Project breakdown
+    const projBreakdown = Object.entries(
+      u.entries // always use all entries for breakdown totals
+        .filter(e => e.projectId && (!project || e.projectId === project))
+        .filter(e => period !== "week" || new Date(e.start) >= ws)
+        .reduce((acc, e) => {
+          acc[e.projectId] = (acc[e.projectId] || 0) + e.duration;
+          return acc;
+        }, {})
+    ).sort((a, b) => b[1] - a[1]);
+
+    const totalSeconds = entries.reduce((s, e) => s + e.duration, 0);
+    const weekSeconds  = u.entries
+      .filter(e => new Date(e.start) >= ws)
+      .reduce((s, e) => s + e.duration, 0);
+
+    return {
+      uid:           u.uid,
+      email:         u.email,
+      name:          u.name,
+      photo:         u.photo,
+      totalSeconds,
+      weekSeconds,
+      totalEntries:  entries.length,
+      projBreakdown, // [[projectId, seconds], ...]
+      entries,       // filtered + sorted, capped at 50 for response size
+    };
+  });
+
+  // Sort by week hours descending
+  students.sort((a, b) => b.weekSeconds - a.weekSeconds);
+
+  // Cap entries per student to keep payload manageable
+  students = students.map(u => ({ ...u, entries: u.entries.slice(0, 50) }));
+
+  res.json(students);
+});
+
+// ── Admin: all raw entries (kept for backward compat / CSV export use) ─────────
+app.get("/api/admin/entries", requireAdmin, (req, res) => {
   const entries = [...db.entries].sort((a, b) => new Date(b.start) - new Date(a.start));
   const resolved = entries.map(e => {
     const user = db.users.find(u => u.id === e.uid);
@@ -213,10 +361,12 @@ app.get("/api/admin/entries", (req, res) => {
 });
 
 // ── Admin: change password ────────────────────────────────────────────────────
-app.post("/api/admin/change-password", (req, res) => {
+app.post("/api/admin/change-password", requireAdmin, (req, res) => {
   const { currentPassword, newPassword } = req.body;
-  if (currentPassword !== config.adminPassword) return res.status(401).json({ error: "Wrong current password" });
-  if (!newPassword || newPassword.length < 4) return res.status(400).json({ error: "Password too short" });
+  if (currentPassword !== config.adminPassword)
+    return res.status(401).json({ error: "Wrong current password" });
+  if (!newPassword || newPassword.length < 4)
+    return res.status(400).json({ error: "Password too short" });
   config.adminPassword = newPassword;
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   res.json({ ok: true });
