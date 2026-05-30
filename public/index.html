@@ -199,6 +199,7 @@ let PROJECTS = {};
 let TAGS     = [];
 
 async function loadConfig() {
+  // /api/config/ui now returns structured data — we build the DOM here.
   const [cfgRes, uiRes] = await Promise.all([
     fetch(`${API}/api/config`),
     fetch(`${API}/api/config/ui`),
@@ -207,14 +208,31 @@ async function loadConfig() {
   const ui  = await uiRes.json();
   PROJECTS = cfg.projects;
   TAGS     = cfg.tags;
-  // Inject server-built HTML — replaces buildDynamicUI()
-  document.getElementById("sidebar-projects").innerHTML = ui.sidebarProjects;
+
+  // Sidebar project list
+  document.getElementById("sidebar-projects").innerHTML =
+    ui.projects.map(p =>
+      `<div class="proj-item"><span class="proj-dot" style="background:${p.color};box-shadow:0 0 5px ${p.color}80;"></span>${p.name}</div>`
+    ).join("");
+
+  // Project dropdown
   document.getElementById("proj-drop").innerHTML =
     `<div class="ditem" onclick="selectProj(null)"><span style="font-size:12px;color:var(--t2);">No project</span></div>` +
-    ui.projDropItems;
+    ui.projects.map(p =>
+      `<div class="ditem" onclick="selectProj('${p.id}')"><span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0;display:inline-block;"></span>${p.name}</div>`
+    ).join("");
+
+  // Edit modal <select>
   document.getElementById("edit-proj").innerHTML =
-    `<option value="">No project</option>` + ui.editProjOptions;
-  document.getElementById("tags-drop").innerHTML = ui.tagsDropItems;
+    `<option value="">No project</option>` +
+    ui.projects.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+
+  // Tags dropdown
+  document.getElementById("tags-drop").innerHTML =
+    ui.tags.map(t => {
+      const slug = t.replace(/\s+/g, "-");
+      return `<div class="ditem" id="tag-opt-${slug}" onclick="event.stopPropagation();toggleTag(${JSON.stringify(t)})"><span class="check-box" id="chk-${slug}"></span>${t}</div>`;
+    }).join("");
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -256,23 +274,23 @@ window.handleLogin = () => {
   function onMessage(e) {
     if (e.origin !== API || e.data?.type !== "GOOGLE_AUTH_SUCCESS") return;
     window.removeEventListener("message", onMessage);
-    localStorage.setItem("tempo_user", JSON.stringify(e.data.user));
-    onUserSignedIn(e.data.user);
+    // User data comes from the server session, not from postMessage payload.
+    fetchCurrentUser();
   }
   window.addEventListener("message", onMessage);
   const poll = setInterval(() => {
     if (!popup?.closed) return;
     clearInterval(poll);
     window.removeEventListener("message", onMessage);
-    const stored = localStorage.getItem("tempo_user");
-    if (stored) { try { onUserSignedIn(JSON.parse(stored)); return; } catch {} }
-    btn.disabled = false;
-    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>Continue with Google';
+    // Popup closed without postMessage — try /auth/me in case redirect flow ran.
+    fetchCurrentUser().catch(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>Continue with Google';
+    });
   }, 500);
 };
 
 window.handleSignOut = () => {
-  localStorage.removeItem("tempo_user");
   window.currentUser = null;
   $("login-screen").style.display = "flex";
   $("app").style.display = "none";
@@ -283,10 +301,18 @@ window.handleSignOut = () => {
   $("empty-state").style.display = "none";
 };
 
+// ── Session restore — always verified against the server ──────────────────────
+async function fetchCurrentUser() {
+  const res = await fetch(`${API}/auth/me`);
+  if (!res.ok) throw new Error("Not authenticated");
+  const user = await res.json();
+  onUserSignedIn(user);
+}
+
 (function restoreSession() {
-  const stored = localStorage.getItem("tempo_user");
-  if (stored) { try { onUserSignedIn(JSON.parse(stored)); return; } catch {} }
-  $("login-screen").style.display = "flex";
+  fetchCurrentUser().catch(() => {
+    $("login-screen").style.display = "flex";
+  });
 })();
 
 function onUserSignedIn(user) {
@@ -299,17 +325,16 @@ function onUserSignedIn(user) {
   wrap.innerHTML = user.photo
     ? `<img src="${user.photo}" class="user-avatar"/>`
     : `<div class="user-avatar-placeholder">${(user.name||user.email||"?")[0].toUpperCase()}</div>`;
-  loadEntries(user);
+  loadEntries();
 }
 
 // ── Data loading ──────────────────────────────────────────────────────────────
-async function loadEntries(user) {
+async function loadEntries() {
   $("db-loading").style.display = "block";
   try {
-    const uid = encodeURIComponent(user.id);
     const [listRes, statsRes] = await Promise.all([
-      fetch(`${API}/api/entries/list/${uid}`),
-      fetch(`${API}/api/entries/stats/${uid}`),
+      fetch(`${API}/api/entries/list`),
+      fetch(`${API}/api/entries/stats`),
     ]);
     window.entryDays = await listRes.json();
     window.statsBase = await statsRes.json();
@@ -332,7 +357,7 @@ function updateTopStats() {
 // ── Reports — entirely server-computed ───────────────────────────────────────
 async function loadReports() {
   try {
-    const res  = await fetch(`${API}/api/entries/reports/${encodeURIComponent(window.currentUser.id)}`);
+    const res  = await fetch(`${API}/api/entries/reports`);
     const data = await res.json();
     $("r-total").textContent    = data.totalFormatted;
     $("r-entries").textContent  = `${data.entryCount} entries`;
@@ -480,20 +505,22 @@ async function saveEntry(e) {
   try {
     const res = await fetch(`${API}/api/entries`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...e, uid: window.currentUser.id,
-        email: window.currentUser.email, userName: window.currentUser.name,
-        start: new Date(e.start).toISOString(), end: new Date(e.end).toISOString() }),
+      body: JSON.stringify({
+        desc: e.desc, projectId: e.projectId, tags: e.tags,
+        start: new Date(e.start).toISOString(), end: new Date(e.end).toISOString(),
+        duration: e.duration,
+      }),
     });
     if (!res.ok) throw new Error(await res.text());
-    await loadEntries(window.currentUser);
+    await loadEntries();
   } catch(err) { console.error("Failed to save entry:", err); alert("Failed to save entry. Make sure the server is running."); }
 }
 
 window.deleteEntry = async id => {
   if (!confirm("Delete this entry?")) return;
   try {
-    await fetch(`${API}/api/entries/${id}?uid=${window.currentUser.id}`, { method: "DELETE" });
-    await loadEntries(window.currentUser);
+    await fetch(`${API}/api/entries/${id}`, { method: "DELETE" });
+    await loadEntries();
   } catch(err) { console.error("Failed to delete:", err); }
 };
 
@@ -538,12 +565,12 @@ window.saveEdit = async () => {
   try {
     const res = await fetch(`${API}/api/entries/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uid: window.currentUser.id, desc: $("edit-desc").value,
+      body: JSON.stringify({ desc: $("edit-desc").value,
         projectId: $("edit-proj").value || null, tags,
         start: newStart.toISOString(), end: newEnd.toISOString(), duration: dur }),
     });
     if (!res.ok) throw new Error(await res.text());
-    await loadEntries(window.currentUser);
+    await loadEntries();
     closeModal();
   } catch(err) { console.error("Failed to save edit:", err); alert("Failed to save. Make sure the server is running."); }
 };

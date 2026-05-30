@@ -115,20 +115,13 @@ app.get("/api/config", (_req, res) => {
   res.json({ projects: PROJECTS, tags: TAGS });
 });
 
+// Returns structured data only — the client is responsible for rendering.
+// Never embed onclick= strings or HTML in API responses.
 app.get("/api/config/ui", (_req, res) => {
-  const sidebarProjects = Object.entries(PROJECTS).map(([,p]) =>
-    `<div class="proj-item"><span class="proj-dot" style="background:${p.color};box-shadow:0 0 5px ${p.color}80;"></span>${p.name}</div>`
-  ).join("");
-  const projDropItems = Object.entries(PROJECTS).map(([id, p]) =>
-    `<div class="ditem" onclick="selectProj('${id}')"><span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex-shrink:0;display:inline-block;"></span>${p.name}</div>`
-  ).join("");
-  const editProjOptions = Object.entries(PROJECTS).map(([id, p]) =>
-    `<option value="${id}">${p.name}</option>`
-  ).join("");
-  const tagsDropItems = TAGS.map(t =>
-    `<div class="ditem" id="tag-opt-${t.replace(/\s+/g,"-")}" onclick="event.stopPropagation();toggleTag('${t.replace(/'/g,"\\'")}')"><span class="check-box" id="chk-${t.replace(/\s+/g,"-")}"></span>${t}</div>`
-  ).join("");
-  res.json({ sidebarProjects, projDropItems, editProjOptions, tagsDropItems });
+  res.json({
+    projects: Object.entries(PROJECTS).map(([id, p]) => ({ id, name: p.name, color: p.color })),
+    tags: TAGS,
+  });
 });
 
 // ── Auth routes ───────────────────────────────────────────────────────────────
@@ -141,22 +134,15 @@ app.get("/auth/google",
 app.get("/auth/google/callback",
   passport.authenticate("google", { failureRedirect: "/?error=auth_failed" }),
   (req, res) => {
-    const user = {
-      id:    req.user.id,
-      email: req.user.email,
-      name:  req.user.name,
-      photo: req.user.photo,
-    };
-    // Encoded once here so the inline script never needs to do JSON.stringify
-    const userJson = JSON.stringify(user).replace(/</g, "\\u003c");
+    // Session cookie is now the sole auth token.
+    // The popup flow sends a minimal signal (no user payload) — the opener
+    // calls /auth/me to get the user from the server-side session.
     res.send(`<!DOCTYPE html><html><body><script>
 (function(){
-  var u=${userJson};
   if(window.opener){
-    window.opener.postMessage({type:"GOOGLE_AUTH_SUCCESS",user:u},"${BASE_URL}");
+    window.opener.postMessage({type:"GOOGLE_AUTH_SUCCESS"},"${BASE_URL}");
     window.close();
   }else{
-    localStorage.setItem("tempo_user",JSON.stringify(u));
     window.location.href="/";
   }
 })();
@@ -195,6 +181,11 @@ app.get("/api/auth/admin/check", (req, res) => {
   res.json({ ok: !!req.session.isAdmin });
 });
 
+function requireAuth(req, res, next) {
+  if (req.isAuthenticated()) return next();
+  return res.status(401).json({ error: "Not authenticated" });
+}
+
 function requireAdmin(req, res, next) {
   if (req.session.isAdmin) return next();
   return res.status(401).json({ error: "Unauthorized" });
@@ -206,9 +197,10 @@ const fmtShort = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); re
 const fmtTime  = d => new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
 const fmtDate  = d => { const t=new Date(),y=new Date(t); y.setDate(y.getDate()-1); const dd=new Date(d); if(dd.toDateString()===t.toDateString())return"Today"; if(dd.toDateString()===y.toDateString())return"Yesterday"; return dd.toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"}); };
 
-// /api/entries/list/:uid — grouped+formatted data for the tracker view
-app.get("/api/entries/list/:uid", (req, res) => {
-  const entries = db.entries.filter(e => e.uid === req.params.uid)
+// /api/entries/list — grouped+formatted data for the tracker view
+app.get("/api/entries/list", requireAuth, (req, res) => {
+  const uid = req.user.id;
+  const entries = db.entries.filter(e => e.uid === uid)
     .sort((a, b) => new Date(b.start) - new Date(a.start));
   const dayMap = {};
   entries.forEach(e => {
@@ -231,9 +223,9 @@ app.get("/api/entries/list/:uid", (req, res) => {
   res.json(days);
 });
 
-// /api/entries/stats/:uid — today + week seconds for the topbar
-app.get("/api/entries/stats/:uid", (req, res) => {
-  const entries = db.entries.filter(e => e.uid === req.params.uid);
+// /api/entries/stats — today + week seconds for the topbar
+app.get("/api/entries/stats", requireAuth, (req, res) => {
+  const entries = db.entries.filter(e => e.uid === req.user.id);
   const now = new Date(), ws = new Date(now);
   ws.setDate(now.getDate()-now.getDay()); ws.setHours(0,0,0,0);
   res.json({
@@ -242,9 +234,9 @@ app.get("/api/entries/stats/:uid", (req, res) => {
   });
 });
 
-// /api/entries/reports/:uid — aggregated data for the reports view
-app.get("/api/entries/reports/:uid", (req, res) => {
-  const entries = db.entries.filter(e => e.uid === req.params.uid);
+// /api/entries/reports — aggregated data for the reports view
+app.get("/api/entries/reports", requireAuth, (req, res) => {
+  const entries = db.entries.filter(e => e.uid === req.user.id);
   const total = entries.reduce((s,e)=>s+e.duration,0);
   const uniqueDays = new Set(entries.map(e=>new Date(e.start).toDateString())).size;
   const byProj = Object.entries(PROJECTS).map(([id,p]) => {
@@ -260,21 +252,22 @@ app.get("/api/entries/reports/:uid", (req, res) => {
   });
 });
 
-app.get("/api/entries", (req, res) => {
-  const { uid } = req.query;
-  if (!uid) return res.status(400).json({ error: "uid required" });
+app.get("/api/entries", requireAuth, (req, res) => {
   const entries = db.entries
-    .filter(e => e.uid === uid)
+    .filter(e => e.uid === req.user.id)
     .sort((a, b) => new Date(b.start) - new Date(a.start));
   res.json(entries);
 });
 
-app.post("/api/entries", (req, res) => {
-  const { uid, email, userName, desc, projectId, tags, start, end, duration } = req.body;
-  if (!uid || !start || !end || duration == null)
+app.post("/api/entries", requireAuth, (req, res) => {
+  const { desc, projectId, tags, start, end, duration } = req.body;
+  if (!start || !end || duration == null)
     return res.status(400).json({ error: "Missing fields" });
   const entry = {
-    id: newId(), uid, email: email || "", userName: userName || "",
+    id: newId(),
+    uid:      req.user.id,
+    email:    req.user.email,
+    userName: req.user.name,
     desc: desc || "Untitled", projectId: projectId || null,
     tags: tags || [], start, end, duration, created: Date.now(),
   };
@@ -283,12 +276,12 @@ app.post("/api/entries", (req, res) => {
   res.status(201).json(entry);
 });
 
-app.patch("/api/entries/:id", (req, res) => {
+app.patch("/api/entries/:id", requireAuth, (req, res) => {
   const { id } = req.params;
-  const { uid, desc, projectId, tags, start, end, duration } = req.body;
+  const { desc, projectId, tags, start, end, duration } = req.body;
   const idx = db.entries.findIndex(e => e.id === id);
   if (idx === -1) return res.status(404).json({ error: "Not found" });
-  if (db.entries[idx].uid !== uid) return res.status(403).json({ error: "Forbidden" });
+  if (db.entries[idx].uid !== req.user.id) return res.status(403).json({ error: "Forbidden" });
   Object.assign(db.entries[idx], {
     ...(desc      !== undefined && { desc }),
     ...(projectId !== undefined && { projectId }),
@@ -301,12 +294,11 @@ app.patch("/api/entries/:id", (req, res) => {
   res.json(db.entries[idx]);
 });
 
-app.delete("/api/entries/:id", (req, res) => {
+app.delete("/api/entries/:id", requireAuth, (req, res) => {
   const { id } = req.params;
-  const { uid } = req.query;
   const idx = db.entries.findIndex(e => e.id === id);
   if (idx === -1) return res.status(404).json({ error: "Not found" });
-  if (uid && db.entries[idx].uid !== uid) return res.status(403).json({ error: "Forbidden" });
+  if (db.entries[idx].uid !== req.user.id) return res.status(403).json({ error: "Forbidden" });
   db.entries.splice(idx, 1);
   saveDB();
   res.json({ ok: true });
