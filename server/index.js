@@ -492,17 +492,22 @@ app.get("/api/admin/students", requireAdmin, (req, res) => {
     const weekSeconds  = weekRows.reduce((s, e) => s + e.duration, 0);
 
     return {
-      uid:           u.id,
-      email:         u.email,
-      name:          u.name,
-      photo:         u.photo,
+      uid:            u.id,
+      displayName:    u.name,
+      avatarColor:    avatarColor(u.email),
+      initials:       avatarInitials(u.name),
+      photo:          u.photo,
       totalSeconds,
       totalFormatted: fmtSec(totalSeconds),
       weekSeconds,
-      totalEntries:  filtered.length,
+      totalEntries:   filtered.length,
       projBreakdown,
-      entries:       filtered.slice(0, 50).map(e => ({
-        ...e,
+      entries:        filtered.slice(0, 50).map(e => ({
+        id:                e.id,
+        desc:              e.desc,
+        tags:              e.tags,
+        projectId:         e.projectId,
+        duration:          e.duration,
         dateShort:         new Date(e.start).toLocaleDateString([], { month: "short", day: "numeric" }),
         startFormatted:    fmtTime(e.start),
         endFormatted:      fmtTime(e.end),
@@ -538,6 +543,16 @@ app.post("/api/admin/change-password", requireAdmin, (req, res) => {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   res.json({ ok: true });
 });
+
+// ── Avatar helpers (server-side so PII never reaches the client) ──────────────
+const AVATAR_COLORS = ["#818CF8","#22C97A","#F5A623","#38BDF8","#F472B6","#FB923C","#A78BFA","#34D399"];
+function avatarColor(email) {
+  const sum = [...email].reduce((a, c) => a + c.charCodeAt(0), 0);
+  return AVATAR_COLORS[Math.abs(sum) % AVATAR_COLORS.length];
+}
+function avatarInitials(name) {
+  return (name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function weekStart() {

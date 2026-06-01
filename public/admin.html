@@ -75,11 +75,6 @@
 <script>
 const API = window.location.origin;
 
-// Avatar color helper (no PROJECTS needed here — colors come from server)
-const COLORS   = ["#818CF8","#22C97A","#F5A623","#38BDF8","#F472B6","#FB923C","#A78BFA","#34D399"];
-const userColor = email => COLORS[Math.abs([...email].reduce((a,c)=>a+c.charCodeAt(0),0))%COLORS.length];
-const initials  = name => (name||"?").split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase();
-
 let expandedUsers = new Set();
 
 async function loadConfig() {
@@ -173,7 +168,7 @@ setInterval(() => {
   if (document.getElementById("app").style.display !== "none") loadData();
 }, 30000);
 
-// ── Render — all aggregation and formatting done server-side ──────────────────
+// ── Render — avatar color and initials are pre-computed server-side ───────────
 function renderStudents(students, period) {
   if (students.length === 0) {
     document.getElementById("student-list").innerHTML = '<div class="loading">No students found.</div>';
@@ -182,7 +177,7 @@ function renderStudents(students, period) {
 
   document.getElementById("student-list").innerHTML = students.map(u => {
     const isOpen = expandedUsers.has(u.uid);
-    const col    = userColor(u.email);
+    const col    = u.avatarColor;
 
     const projBreakdownHtml = u.projBreakdown.length > 0
       ? `<div class="proj-bar">${u.projBreakdown.map(p =>
@@ -211,10 +206,9 @@ function renderStudents(students, period) {
     return `
       <div class="student-card fadeIn">
         <div class="student-header" onclick="toggleStudent('${u.uid}')">
-          <div class="avatar" style="background:${col}20;color:${col};">${initials(u.name)}</div>
+          <div class="avatar" style="background:${col}20;color:${col};">${u.initials}</div>
           <div class="student-info">
-            <div class="student-name">${u.name}</div>
-            <div class="student-email">${u.email}</div>
+            <div class="student-name">${u.displayName}</div>
           </div>
           <div class="student-stats">
             ${projCols}
