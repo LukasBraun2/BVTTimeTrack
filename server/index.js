@@ -7,6 +7,7 @@ const GoogleStrat = require("passport-google-oauth20").Strategy;
 const path        = require("path");
 const crypto      = require("crypto");
 const fs          = require("fs");
+const bcrypt      = require("bcrypt");
 const Database    = require("better-sqlite3");
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -30,12 +31,23 @@ const TAGS = [
   "online lecture", "Outlining / Wireframes", "WIX assignment",
 ];
 
-// ── Load / create config (admin password only — not user data) ────────────────
-let config = { adminPassword: "admin123" };
+// ── Load / create config (admin password hash only — not user data) ───────────
+let config = {};
 if (fs.existsSync(CONFIG_PATH)) {
   try { config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")); } catch {}
-} else {
+}
+
+// On first run, hash the ADMIN_PASSWORD env var and persist it.
+// If no env var is set and no hash exists yet, refuse to start.
+if (!config.adminPasswordHash) {
+  const initialPassword = process.env.ADMIN_PASSWORD;
+  if (!initialPassword || initialPassword.length < 8) {
+    console.error("\n❌  Set ADMIN_PASSWORD (≥8 chars) as an environment variable before starting.\n");
+    process.exit(1);
+  }
+  config.adminPasswordHash = bcrypt.hashSync(initialPassword, 12);
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  console.log("✅  Admin password hashed and saved.");
 }
 
 // ── SQLite database ───────────────────────────────────────────────────────────
@@ -119,10 +131,14 @@ const newId = () => crypto.randomUUID();
 const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const BASE_URL             = process.env.BASE_URL || "https://bvttimetrack.onrender.com";
-const SESSION_SECRET       = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+const SESSION_SECRET       = process.env.SESSION_SECRET;
 
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
   console.error("\n❌  Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in .env\n");
+  process.exit(1);
+}
+if (!process.env.SESSION_SECRET) {
+  console.error("\n❌  Missing SESSION_SECRET in environment variables. Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"\n");
   process.exit(1);
 }
 
@@ -226,10 +242,35 @@ app.post("/auth/logout", (req, res) => {
 });
 
 // ── Admin auth ────────────────────────────────────────────────────────────────
-app.post("/api/auth/admin", (req, res) => {
+// Simple in-memory rate limiter: max 5 failed attempts per IP per 15 minutes
+const loginAttempts = new Map();
+function isRateLimited(ip) {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  const entry = loginAttempts.get(ip) || { count: 0, resetAt: now + windowMs };
+  if (now > entry.resetAt) { loginAttempts.set(ip, { count: 0, resetAt: now + windowMs }); return false; }
+  return entry.count >= 5;
+}
+function recordFailedAttempt(ip) {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  const entry = loginAttempts.get(ip) || { count: 0, resetAt: now + windowMs };
+  entry.count++;
+  loginAttempts.set(ip, entry);
+}
+function clearAttempts(ip) { loginAttempts.delete(ip); }
+
+app.post("/api/auth/admin", async (req, res) => {
+  const ip = req.ip;
+  if (isRateLimited(ip))
+    return res.status(429).json({ error: "Too many attempts. Try again in 15 minutes." });
   const { password } = req.body;
-  if (password !== config.adminPassword)
+  const match = password && await bcrypt.compare(password, config.adminPasswordHash);
+  if (!match) {
+    recordFailedAttempt(ip);
     return res.status(401).json({ error: "Wrong password" });
+  }
+  clearAttempts(ip);
   req.session.isAdmin = true;
   res.json({ ok: true });
 });
@@ -692,13 +733,15 @@ app.post("/api/admin/import", requireAdmin, (req, res) => {
 });
 
 // ── Admin: change password ────────────────────────────────────────────────────
-app.post("/api/admin/change-password", requireAdmin, (req, res) => {
+app.post("/api/admin/change-password", requireAdmin, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
-  if (currentPassword !== config.adminPassword)
+  const match = currentPassword && await bcrypt.compare(currentPassword, config.adminPasswordHash);
+  if (!match)
     return res.status(401).json({ error: "Wrong current password" });
-  if (!newPassword || newPassword.length < 4)
-    return res.status(400).json({ error: "Password too short" });
-  config.adminPassword = newPassword;
+  if (!newPassword || newPassword.length < 8)
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  config.adminPasswordHash = await bcrypt.hash(newPassword, 12);
+  delete config.adminPassword; // remove any legacy plaintext field
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   res.json({ ok: true });
 });
@@ -726,6 +769,5 @@ app.listen(PORT, () => {
   console.log(`\n✅ Tempo server running at ${BASE_URL}`);
   console.log(`   Student tracker: ${BASE_URL}/`);
   console.log(`   Admin panel:     ${BASE_URL}/admin.html`);
-  console.log(`   Admin password:  ${config.adminPassword}`);
   console.log(`   Database:        ${DB_PATH}\n`);
 });

@@ -4,12 +4,12 @@
   "description": "Tempo time tracker local server",
   "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js",
+    "start": "node src/index.js",
     "dev": "node --watch server/index.js",
-    "build": "npm rebuild better-sqlite3",
-    "start": "node src/index.js"
+    "build": "npm rebuild better-sqlite3"
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.10.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
