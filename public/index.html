@@ -249,6 +249,7 @@ window.statsBase      = { todaySeconds: 0, weekSeconds: 0 };
 // ── Helpers (live timer display + edit modal only) ────────────────────────────
 const fmt      = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
 const toTimeStr = d => { const dt=new Date(d); return `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}`; };
+const toLocalISO = d => { const dt = new Date(d); const off = dt.getTimezoneOffset() * 60000; return new Date(dt - off).toISOString().slice(0, -1); };
 const $        = id => document.getElementById(id);
 
 // ── Sidebar / nav ─────────────────────────────────────────────────────────────
@@ -507,7 +508,7 @@ async function saveEntry(e) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         desc: e.desc, projectId: e.projectId, tags: e.tags,
-        start: new Date(e.start).toISOString(), end: new Date(e.end).toISOString(),
+        start: toLocalISO(e.start), end: toLocalISO(e.end),
         duration: e.duration,
       }),
     });
