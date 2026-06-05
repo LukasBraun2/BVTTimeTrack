@@ -73,7 +73,7 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS entries (
       id         TEXT PRIMARY KEY,
       uid        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      desc       TEXT NOT NULL DEFAULT 'Untitled',
+      "desc"     TEXT NOT NULL DEFAULT 'Untitled',
       project_id TEXT,
       tags       JSONB NOT NULL DEFAULT '[]',
       start      TEXT NOT NULL,
@@ -421,7 +421,7 @@ app.post("/api/entries", requireAuth, async (req, res) => {
   try {
     const id = newId();
     await pool.query(
-      `INSERT INTO entries (id, uid, desc, project_id, tags, start, "end", duration, created)
+      `INSERT INTO entries (id, uid, "desc", project_id, tags, start, "end", duration, created)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [id, req.user.id, desc || "Untitled", projectId || null,
        JSON.stringify(tags || []), start, end, duration, Date.now()]
@@ -446,7 +446,7 @@ app.patch("/api/entries/:id", requireAuth, async (req, res) => {
 
     await pool.query(
       `UPDATE entries
-       SET desc = $1, project_id = $2, tags = $3, start = $4, "end" = $5, duration = $6
+       SET "desc" = $1, project_id = $2, tags = $3, start = $4, "end" = $5, duration = $6
        WHERE id = $7 AND uid = $8`,
       [
         desc       !== undefined ? desc       : e.desc,
@@ -756,7 +756,7 @@ app.post("/api/admin/import", requireAdmin, async (req, res) => {
       const tags         = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
 
       await client.query(
-        `INSERT INTO entries (id, uid, desc, project_id, tags, start, "end", duration, created)
+        `INSERT INTO entries (id, uid, "desc", project_id, tags, start, "end", duration, created)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [newId(), user.id, r.description || "Untitled", projectId,
          JSON.stringify(tags), startISO, endISO, durationSecs, Date.now()]
