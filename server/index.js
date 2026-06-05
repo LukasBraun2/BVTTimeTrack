@@ -553,75 +553,76 @@ app.get("/api/admin/entries", requireAdmin, (req, res) => {
 });
 
 // ── Admin: import entries from Excel export ───────────────────────────────────
-async function importCSV(file) {
-  const text = await file.text();
+// ── Admin: import entries from Excel/CSV export ───────────────────────────────
+app.post("/api/admin/import", requireAdmin, (req, res) => {
+  const { entries } = req.body;
+  if (!Array.isArray(entries) || entries.length === 0)
+    return res.status(400).json({ error: "No entries provided" });
 
-  // Parse CSV (handles quoted fields with commas inside)
-  const parseCSVLine = (line) => {
-    const result = [];
-    let cur = '', inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        inQuotes = !inQuotes;
-      } else if (ch === ',' && !inQuotes) {
-        result.push(cur); cur = '';
-      } else {
-        cur += ch;
-      }
+  const projByName = {};
+  for (const [id, p] of Object.entries(PROJECTS))
+    projByName[p.name.toLowerCase()] = id;
+
+  const userCache = {};
+  const getOrCreateUser = (name, email) => {
+    if (userCache[email]) return userCache[email];
+    let user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+    if (!user) {
+      const id = newId();
+      const fakeGoogleId = "import_" + crypto.createHash("sha1").update(email).digest("hex");
+      db.prepare("INSERT OR IGNORE INTO users (id, google_id, email, name, photo, created) VALUES (?, ?, ?, ?, NULL, ?)")
+        .run(id, fakeGoogleId, email, name || email, Date.now());
+      user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
     }
-    result.push(cur);
-    return result;
+    userCache[email] = user;
+    return user;
   };
 
-  const lines = text.trim().split('\n');
-  const headers = parseCSVLine(lines[0]);
+  const existingKeys = new Set(
+    db.prepare("SELECT uid, start FROM entries").all()
+      .map(r => `${r.uid}|${r.start}`)
+  );
 
-  // Find column indices by header name
-  const idx = (name) => headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
-  const iProject    = idx('Project');
-  const iDesc       = idx('Description');
-  const iUser       = idx('User');
-  const iEmail      = idx('Email');
-  const iTags       = idx('Tags');
-  const iStartDate  = idx('Start Date');
-  const iStartTime  = idx('Start Time');
-  const iEndDate    = idx('End Date');
-  const iEndTime    = idx('End Time');
-  const iDuration   = idx('Duration (decimal)');
-
-  // Convert MM/DD/YYYY → YYYY-MM-DD
-  const toISO = (mmddyyyy) => {
-    if (!mmddyyyy) return '';
-    const [m, d, y] = mmddyyyy.split('/');
-    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
-  };
-
-  const entries = lines.slice(1).map(line => {
-    const cols = parseCSVLine(line);
-    return {
-      project:         cols[iProject]   || '',
-      description:     cols[iDesc]      || '',
-      user:            cols[iUser]      || '',
-      email:           cols[iEmail]     || '',
-      tags:            cols[iTags]      || '',
-      startDate:       toISO(cols[iStartDate]),
-      startTime:       cols[iStartTime] || '00:00:00',
-      endDate:         toISO(cols[iEndDate]),
-      endTime:         cols[iEndTime]   || '00:00:00',
-      durationDecimal: cols[iDuration]  || '0',
-    };
-  }).filter(e => e.email && e.startDate); // skip blank rows
-
-  const res = await fetch('/api/admin/import', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entries }),  // ← must be JSON, not raw CSV
+  const insertMany = db.transaction(rows => {
+    let inserted = 0, skipped = 0;
+    const affectedUsers = new Set();
+    for (const r of rows) {
+      if (!r.email || !r.startDate) { skipped++; continue; }
+      const user = getOrCreateUser(r.user, r.email);
+      if (!user) { skipped++; continue; }
+      const startISO = `${r.startDate}T${r.startTime || "00:00:00"}`;
+      const endISO   = `${r.endDate}T${r.endTime   || "00:00:00"}`;
+      const key = `${user.id}|${startISO}`;
+      if (existingKeys.has(key)) { skipped++; continue; }
+      const durationSecs = Math.round((parseFloat(r.durationDecimal) || 0) * 3600);
+      const projectId    = r.project ? (projByName[r.project.toLowerCase()] || null) : null;
+      const tags         = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
+      stmt.insertEntry.run({
+        id:         newId(),
+        uid:        user.id,
+        desc:       r.description || "Untitled",
+        project_id: projectId,
+        tags:       JSON.stringify(tags),
+        start:      startISO,
+        end:        endISO,
+        duration:   durationSecs,
+        created:    Date.now(),
+      });
+      existingKeys.add(key);
+      affectedUsers.add(user.id);
+      inserted++;
+    }
+    return { inserted, skipped, users: affectedUsers.size };
   });
 
-  if (!res.ok) throw new Error(await res.text());
-  return await res.json(); // { inserted, skipped, users }
-}
+  try {
+    const result = insertMany(entries);
+    res.json(result);
+  } catch(err) {
+    console.error("Import error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ── Admin: change password ────────────────────────────────────────────────────
 app.post("/api/admin/change-password", requireAdmin, (req, res) => {
