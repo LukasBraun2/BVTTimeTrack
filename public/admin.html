@@ -572,14 +572,18 @@ window.runImport = async () => {
     };
   }).filter(r => r.email && r.startDate && r.endDate);
 
-  try {
+try {
     const res = await fetch(`${API}/api/admin/import`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ entries: payload }),
     });
-    const data = await res.json();
+    const raw = await res.text(); // read as text first
+    console.log("Import response status:", res.status);
+    console.log("Import response body:", raw);   // <── look at this in F12 console
+    const data = JSON.parse(raw);
     if (!res.ok) throw new Error(data.error || "Server error");
+    // ... rest unchanged
 
     prog.className = "import-progress ok";
     prog.textContent = `✓ Imported ${data.inserted.toLocaleString()} entries for ${data.users.toLocaleString()} students. ${data.skipped > 0 ? `(${data.skipped} duplicates skipped)` : ""}`;
