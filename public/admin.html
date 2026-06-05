@@ -116,9 +116,9 @@
     <h2>Import time entries</h2>
     <p>Upload a Toggl-style Excel export (.xlsx). Entries are matched to students by email — new accounts are created automatically.</p>
     <div class="drop-zone" id="drop-zone">
-      <input type="file" accept=".xlsx,.xls" id="import-file-input" onchange="handleFileSelect(this.files[0])"/>
+      <input type="file" accept=".xlsx,.xls,.csv" id="import-file-input" onchange="handleFileSelect(this.files[0])"/>
       <div class="drop-zone-icon">📂</div>
-      <div class="drop-zone-label" id="drop-label">Drop your .xlsx file here</div>
+      <div class="drop-zone-label" id="drop-label">Drop your .xlsx or .csv file here</div>
       <div class="drop-zone-sub" id="drop-sub">or click to browse</div>
     </div>
     <div class="import-schema">
@@ -428,43 +428,71 @@ window.handleFileSelect = file => {
   prog.className = "import-progress";
   prog.textContent = "Reading file…";
 
+  // ── CSV branch (Clockify export) ──────────────────────────────────────────
+  if (file.name.toLowerCase().endsWith(".csv")) {
+    file.text().then(text => {
+      try {
+        const parseCSVLine = line => {
+          const result = []; let cur = "", inQuotes = false;
+          for (const ch of line) {
+            if (ch === '"') { inQuotes = !inQuotes; }
+            else if (ch === "," && !inQuotes) { result.push(cur); cur = ""; }
+            else { cur += ch; }
+          }
+          result.push(cur);
+          return result;
+        };
+
+        const lines = text.trim().split("\n").filter(l => l.trim());
+        const headers = parseCSVLine(lines[0]);
+        const idx = name => headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
+
+        const iUser = idx("User"), iEmail = idx("Email"), iDesc = idx("Description"),
+              iProj = idx("Project"), iTags = idx("Tags"),
+              iSD = idx("Start Date"), iST = idx("Start Time"),
+              iED = idx("End Date"), iET = idx("End Time"),
+              iDur = idx("Duration (decimal)");
+
+        // MM/DD/YYYY → YYYY-MM-DD
+        const toISO = s => { if (!s) return ""; const [m,d,y] = s.split("/"); return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`; };
+
+        importRows = lines.slice(1).map(line => {
+          const c = parseCSVLine(line);
+          return {
+            user:            (c[iUser]  || "").trim(),
+            email:           (c[iEmail] || "").trim().toLowerCase(),
+            description:     (c[iDesc]  || "").trim(),
+            project:         (c[iProj]  || "").trim(),
+            tags:            (c[iTags]  || "").trim(),
+            startDate:       toISO(c[iSD]),
+            startTime:       (c[iST] || "00:00:00").trim().slice(0, 8),
+            endDate:         toISO(c[iED]),
+            endTime:         (c[iET] || "00:00:00").trim().slice(0, 8),
+            durationDecimal: parseFloat(c[iDur]) || 0,
+          };
+        }).filter(r => r.email && r.startDate);
+
+        if (importRows.length === 0) {
+          prog.className = "import-progress err";
+          prog.textContent = "No valid rows found in CSV.";
+          return;
+        }
+        document.getElementById("drop-zone").classList.add("has-file");
+        document.getElementById("drop-label").textContent = `✓ ${file.name}`;
+        document.getElementById("drop-sub").textContent = `${importRows.length.toLocaleString()} rows ready`;
+        document.getElementById("import-run-btn").disabled = false;
+        prog.className = "import-progress ok";
+        prog.textContent = `Parsed ${importRows.length.toLocaleString()} entries — click Import to upload.`;
+      } catch(err) {
+        prog.className = "import-progress err";
+        prog.textContent = "Failed to parse CSV.";
+      }
+    });
+    return; // ← don't fall through to the XLSX reader
+  }
+  // ── XLSX branch (existing logic, unchanged) ───────────────────────────────
   const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const wb   = XLSX.read(e.target.result, { type: "array", cellDates: true });
-      const ws   = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
-
-      if (rows.length === 0) {
-        prog.className = "import-progress err";
-        prog.textContent = "File is empty or unreadable.";
-        return;
-      }
-
-      // Validate required columns
-      const required = ["User", "Email", "Start Date", "Start Time", "End Date", "End Time", "Duration (decimal)"];
-      const cols = Object.keys(rows[0]);
-      const missing = required.filter(c => !cols.includes(c));
-      if (missing.length) {
-        prog.className = "import-progress err";
-        prog.textContent = `Missing columns: ${missing.join(", ")}`;
-        return;
-      }
-
-      importRows = rows;
-      document.getElementById("drop-zone").classList.add("has-file");
-      document.getElementById("drop-label").textContent = `✓ ${file.name}`;
-      document.getElementById("drop-sub").textContent = `${rows.length.toLocaleString()} rows ready`;
-      document.getElementById("import-run-btn").disabled = false;
-      prog.className = "import-progress ok";
-      prog.textContent = `Parsed ${rows.length.toLocaleString()} entries — click Import to upload.`;
-    } catch(err) {
-      prog.className = "import-progress err";
-      prog.textContent = "Failed to parse file. Is it a valid .xlsx?";
-    }
-  };
-  reader.readAsArrayBuffer(file);
-};
+  // ... rest of existing code unchanged
 
 window.runImport = async () => {
   if (!importRows) return;

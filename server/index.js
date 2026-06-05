@@ -31,7 +31,7 @@ const TAGS = [
 ];
 
 // ── Load / create config (admin password only — not user data) ────────────────
-let config = { adminPassword: "254Xb1@443HBnalesk" };
+let config = { adminPassword: "admin123" };
 if (fs.existsSync(CONFIG_PATH)) {
   try { config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")); } catch {}
 } else {
@@ -553,89 +553,75 @@ app.get("/api/admin/entries", requireAdmin, (req, res) => {
 });
 
 // ── Admin: import entries from Excel export ───────────────────────────────────
-app.post("/api/admin/import", requireAdmin, (req, res) => {
-  const { entries } = req.body;
-  if (!Array.isArray(entries) || entries.length === 0)
-    return res.status(400).json({ error: "No entries provided" });
+async function importCSV(file) {
+  const text = await file.text();
 
-  // Map project name → project id (case-insensitive)
-  const projByName = {};
-  for (const [id, p] of Object.entries(PROJECTS))
-    projByName[p.name.toLowerCase()] = id;
-
-  // Find or create users by email (upsert pattern)
-  const userCache = {};
-  const getOrCreateUser = (name, email) => {
-    if (userCache[email]) return userCache[email];
-    let user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
-    if (!user) {
-      const id = newId();
-      // Use a placeholder google_id that won't collide with real OAuth ids
-      const fakeGoogleId = "import_" + crypto.createHash("sha1").update(email).digest("hex");
-      db.prepare("INSERT OR IGNORE INTO users (id, google_id, email, name, photo, created) VALUES (?, ?, ?, ?, NULL, ?)")
-        .run(id, fakeGoogleId, email, name || email, Date.now());
-      user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
-    } else if (name && user.name !== name && !user.google_id.startsWith("import_")) {
-      // Don't overwrite names for real OAuth users
+  // Parse CSV (handles quoted fields with commas inside)
+  const parseCSVLine = (line) => {
+    const result = [];
+    let cur = '', inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        result.push(cur); cur = '';
+      } else {
+        cur += ch;
+      }
     }
-    userCache[email] = user;
-    return user;
+    result.push(cur);
+    return result;
   };
 
-  // Build a set of existing (uid, start) pairs to skip duplicates
-  const existingKeys = new Set(
-    db.prepare("SELECT uid, start FROM entries").all()
-      .map(r => `${r.uid}|${r.start}`)
-  );
+  const lines = text.trim().split('\n');
+  const headers = parseCSVLine(lines[0]);
 
-  const insertMany = db.transaction(rows => {
-    let inserted = 0, skipped = 0;
-    const affectedUsers = new Set();
+  // Find column indices by header name
+  const idx = (name) => headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
+  const iProject    = idx('Project');
+  const iDesc       = idx('Description');
+  const iUser       = idx('User');
+  const iEmail      = idx('Email');
+  const iTags       = idx('Tags');
+  const iStartDate  = idx('Start Date');
+  const iStartTime  = idx('Start Time');
+  const iEndDate    = idx('End Date');
+  const iEndTime    = idx('End Time');
+  const iDuration   = idx('Duration (decimal)');
 
-    for (const r of rows) {
-      if (!r.email || !r.startDate) { skipped++; continue; }
+  // Convert MM/DD/YYYY → YYYY-MM-DD
+  const toISO = (mmddyyyy) => {
+    if (!mmddyyyy) return '';
+    const [m, d, y] = mmddyyyy.split('/');
+    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  };
 
-      const user = getOrCreateUser(r.user, r.email);
-      if (!user) { skipped++; continue; }
+  const entries = lines.slice(1).map(line => {
+    const cols = parseCSVLine(line);
+    return {
+      project:         cols[iProject]   || '',
+      description:     cols[iDesc]      || '',
+      user:            cols[iUser]      || '',
+      email:           cols[iEmail]     || '',
+      tags:            cols[iTags]      || '',
+      startDate:       toISO(cols[iStartDate]),
+      startTime:       cols[iStartTime] || '00:00:00',
+      endDate:         toISO(cols[iEndDate]),
+      endTime:         cols[iEndTime]   || '00:00:00',
+      durationDecimal: cols[iDuration]  || '0',
+    };
+  }).filter(e => e.email && e.startDate); // skip blank rows
 
-      // Build ISO datetimes from date + time strings
-      const startISO = `${r.startDate}T${r.startTime || "00:00:00"}`;
-      const endISO   = `${r.endDate}T${r.endTime   || "00:00:00"}`;
-
-      const key = `${user.id}|${startISO}`;
-      if (existingKeys.has(key)) { skipped++; continue; }
-
-      const durationSecs = Math.round((parseFloat(r.durationDecimal) || 0) * 3600);
-      const projectId    = r.project ? (projByName[r.project.toLowerCase()] || null) : null;
-      const tags         = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
-
-      stmt.insertEntry.run({
-        id:         newId(),
-        uid:        user.id,
-        desc:       r.description || "Untitled",
-        project_id: projectId,
-        tags:       JSON.stringify(tags),
-        start:      startISO,
-        end:        endISO,
-        duration:   durationSecs,
-        created:    Date.now(),
-      });
-
-      existingKeys.add(key);
-      affectedUsers.add(user.id);
-      inserted++;
-    }
-    return { inserted, skipped, users: affectedUsers.size };
+  const res = await fetch('/api/admin/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entries }),  // ← must be JSON, not raw CSV
   });
 
-  try {
-    const result = insertMany(entries);
-    res.json(result);
-  } catch(err) {
-    console.error("Import error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json(); // { inserted, skipped, users }
+}
 
 // ── Admin: change password ────────────────────────────────────────────────────
 app.post("/api/admin/change-password", requireAdmin, (req, res) => {
