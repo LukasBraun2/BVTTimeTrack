@@ -538,8 +538,11 @@ window.runImport = async () => {
   prog.className = "import-progress";
   prog.textContent = `Uploading ${importRows.length.toLocaleString()} entries…`;
 
-  // Serialise dates/times to ISO strings
-  const payload = importRows.map(r => {
+  // If rows already have camelCase keys (CSV path), use them directly.
+  // Otherwise map from XLSX-style keys.
+  const isPreMapped = importRows[0] && "startDate" in importRows[0];
+
+  const payload = isPreMapped ? importRows : importRows.map(r => {
     const dateVal = r["Start Date"];
     const startDateStr = dateVal instanceof Date
       ? dateVal.toISOString().slice(0, 10)
@@ -550,7 +553,6 @@ window.runImport = async () => {
       ? endDateVal.toISOString().slice(0, 10)
       : String(endDateVal).slice(0, 10);
 
-    // Time may be a Date object (from xlsx) or a string like "HH:MM:SS"
     const toTimeStr = v => {
       if (v instanceof Date) return v.toTimeString().slice(0, 8);
       return String(v || "00:00:00").slice(0, 8);
@@ -581,7 +583,7 @@ window.runImport = async () => {
 
     prog.className = "import-progress ok";
     prog.textContent = `✓ Imported ${data.inserted.toLocaleString()} entries for ${data.users.toLocaleString()} students. ${data.skipped > 0 ? `(${data.skipped} duplicates skipped)` : ""}`;
-    loadData(); // Refresh the student list
+    loadData();
   } catch(err) {
     prog.className = "import-progress err";
     prog.textContent = `Import failed: ${err.message}`;
