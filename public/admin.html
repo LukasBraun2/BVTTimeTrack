@@ -562,6 +562,7 @@ window.runImport = async () => {
   const isPreMapped = importRows[0] && "startDate" in importRows[0];
 
   const payload = isPreMapped ? importRows : importRows.map(r => {
+      console.log("Start Time raw:", r["Start Time"], typeof r["Start Time"]);
       const dateVal = r["Start Date"];
       const startDateStr = dateVal instanceof Date
         ? dateVal.toISOString().slice(0, 10)
@@ -622,7 +623,6 @@ window.runImport = async () => {
     }).filter(r => r.email && r.startDate && r.endDate);
 
 try {
-    console.log("First 3 payload rows:", JSON.stringify(payload.slice(0, 3), null, 2));
     const res = await fetch(`${API}/api/admin/import`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
