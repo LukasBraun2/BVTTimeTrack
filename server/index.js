@@ -166,7 +166,7 @@ app.use(session({
   saveUninitialized: false,
   cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 }, // 7 days
 }));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(express.static(path.join(__dirname, "..", "public")));
