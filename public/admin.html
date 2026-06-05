@@ -598,12 +598,25 @@ try {
     btn.disabled = false;
   }
 };
-window.exportCSV = () => {
+window.exportCSV = async () => {
   const search  = document.getElementById("search-input").value;
   const project = document.getElementById("proj-filter").value;
   const period  = document.getElementById("week-filter").value;
   const params  = new URLSearchParams({ project, period, search });
-  window.location.href = `${API}/api/admin/export?${params}`;
+
+  try {
+    const res = await fetch(`${API}/api/admin/export?${params}`);
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `Tempo_Export_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(err) {
+    alert("Export failed: " + err.message);
+  }
 };
 </script>
 </body>
