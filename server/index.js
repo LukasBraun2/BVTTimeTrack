@@ -31,7 +31,7 @@ const TAGS = [
 ];
 
 // ── Load / create config (admin password only — not user data) ────────────────
-let config = { adminPassword: "admin123" };
+let config = { adminPassword: "254Xb1@443HBnalesk" };
 if (fs.existsSync(CONFIG_PATH)) {
   try { config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")); } catch {}
 } else {
