@@ -622,6 +622,7 @@ window.runImport = async () => {
     }).filter(r => r.email && r.startDate && r.endDate);
 
 try {
+    console.log("First 3 payload rows:", JSON.stringify(payload.slice(0, 3), null, 2));
     const res = await fetch(`${API}/api/admin/import`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
