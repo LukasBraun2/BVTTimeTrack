@@ -278,8 +278,8 @@ const fmtTime = d => {
   const t = String(d).split("T")[1] || "";
   const [h, m] = t.split(":");
   const hour = parseInt(h, 10);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const h12  = hour % 12 || 12;
+  const ampm = hour >= 12 && hour < 24 ? "PM" : "AM";
+  const h12  = hour % 12 === 0 ? 12 : hour % 12;
   return `${h12}:${m} ${ampm}`;
 };
 const fmtDate = d => {
