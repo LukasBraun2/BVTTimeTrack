@@ -483,8 +483,18 @@ window.handleFileSelect = file => {
             return h * 3600 + m * 60 + (s || 0);
           };
 
-          let startTime = (c[iST] || "00:00:00").trim().slice(0, 8);
-          let endTime   = (c[iET] || "00:00:00").trim().slice(0, 8);
+          const to24h = str => {
+            str = (str || "").trim();
+            const ampm = str.slice(-2).toUpperCase();
+            const parts = str.slice(0, 8).trim().split(":").map(Number);
+            let h = parts[0], m = parts[1], s = parts[2] || 0;
+            if (ampm === "PM" && h !== 12) h += 12;
+            if (ampm === "AM" && h === 12) h = 0;
+            return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+          };
+
+          let startTime = to24h(c[iST]);
+          let endTime   = to24h(c[iET]);
           const durSecs = Math.round((parseFloat(c[iDur]) || 0) * 3600);
 
           const startSecs = timeToSecs(startTime);
