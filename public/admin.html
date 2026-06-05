@@ -514,7 +514,7 @@ window.handleFileSelect = file => {
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const wb   = XLSX.read(e.target.result, { type: "array", cellDates: true });
+      const wb = XLSX.read(e.target.result, { type: "array", cellDates: false });
       const ws   = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
@@ -573,6 +573,14 @@ window.runImport = async () => {
       : String(endDateVal).slice(0, 10);
 
     const toTimeStr = v => {
+      if (typeof v === "number") {
+        // Excel time fraction: 0.5 = 12:00:00, 0.0 = 00:00:00
+        const totalSecs = Math.round(v * 86400);
+        const h = Math.floor(totalSecs / 3600);
+        const m = Math.floor((totalSecs % 3600) / 60);
+        const s = totalSecs % 60;
+        return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+      }
       if (v instanceof Date) return v.toTimeString().slice(0, 8);
       return String(v || "00:00:00").slice(0, 8);
     };
