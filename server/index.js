@@ -443,29 +443,31 @@ app.get("/api/admin/students", requireAdmin, (req, res) => {
   const { project = "", period = "week", search = "" } = req.query;
   const ws = weekStart();
 
-  // Pull all users who have at least one entry; join from entries side so we
-  // never show a user with zero entries.
-  let users = db.prepare("SELECT DISTINCT u.* FROM users u JOIN entries e ON e.uid = u.id").all();
+  // Single query: all users who have entries, with their entries attached.
+  // Entries come back as one flat list; we group by uid in JS below.
+  const allUsers   = db.prepare("SELECT DISTINCT u.* FROM users u JOIN entries e ON e.uid = u.id").all();
+  const allEntries = db.prepare("SELECT * FROM entries ORDER BY start DESC").all().map(parseEntry);
 
-  // Text search
-  if (search) {
-    const q = search.toLowerCase();
-    users = users.filter(u =>
-      u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
-    );
+  // Group entries by uid for O(1) lookup
+  const entriesByUid = {};
+  for (const e of allEntries) {
+    (entriesByUid[e.uid] = entriesByUid[e.uid] || []).push(e);
   }
 
-  // Project filter: keep only users who have an entry in that project
+  // Text search
+  let users = allUsers;
+  if (search) {
+    const q = search.toLowerCase();
+    users = users.filter(u => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+  }
+
+  // Project filter: keep only users who have at least one entry in that project
   if (project) {
-    const uids = new Set(
-      db.prepare("SELECT DISTINCT uid FROM entries WHERE project_id = ?").all(project).map(r => r.uid)
-    );
-    users = users.filter(u => uids.has(u.id));
+    users = users.filter(u => (entriesByUid[u.id] || []).some(e => e.projectId === project));
   }
 
   const students = users.map(u => {
-    // All entries for this user (used for week breakdown totals)
-    const allRows = db.prepare("SELECT * FROM entries WHERE uid = ? ORDER BY start DESC").all(u.id).map(parseEntry);
+    const allRows = entriesByUid[u.id] || [];
 
     // Filtered entry list (period + project)
     let filtered = allRows;
