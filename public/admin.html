@@ -515,6 +515,7 @@ window.handleFileSelect = file => {
             endTime:         endTime,
             durationDecimal: parseFloat(c[iDur]) || 0,
           };
+        }).filter(r => r.email && r.startDate);
 
         if (importRows.length === 0) {
           prog.className = "import-progress err";
