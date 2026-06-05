@@ -271,6 +271,8 @@ app.get("/api/auth/admin/check", (req, res) => {
   res.json({ ok: !!req.session.isAdmin });
 });
 
+
+
 // ── Formatting helpers ────────────────────────────────────────────────────────
 const fmtSec   = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
 const fmtShort = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; };
@@ -346,7 +348,15 @@ app.get("/api/entries/list", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Database error" });
   }
 });
-
+app.get("/api/debug/entries", requireAdmin, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT u.email, e.start, e."end" FROM entries e 
+     JOIN users u ON u.id = e.uid 
+     WHERE u.email = 'margaretwu26bvt@gmail.com'
+     ORDER BY e.start DESC LIMIT 5`
+  );
+  res.json(rows);
+});
 // ── Entries: stats ────────────────────────────────────────────────────────────
 app.get("/api/entries/stats", requireAuth, async (req, res) => {
   try {
