@@ -552,6 +552,91 @@ app.get("/api/admin/entries", requireAdmin, (req, res) => {
   res.json(rows);
 });
 
+// ── Admin: import entries from Excel export ───────────────────────────────────
+app.post("/api/admin/import", requireAdmin, (req, res) => {
+  const { entries } = req.body;
+  if (!Array.isArray(entries) || entries.length === 0)
+    return res.status(400).json({ error: "No entries provided" });
+
+  // Map project name → project id (case-insensitive)
+  const projByName = {};
+  for (const [id, p] of Object.entries(PROJECTS))
+    projByName[p.name.toLowerCase()] = id;
+
+  // Find or create users by email (upsert pattern)
+  const userCache = {};
+  const getOrCreateUser = (name, email) => {
+    if (userCache[email]) return userCache[email];
+    let user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+    if (!user) {
+      const id = newId();
+      // Use a placeholder google_id that won't collide with real OAuth ids
+      const fakeGoogleId = "import_" + crypto.createHash("sha1").update(email).digest("hex");
+      db.prepare("INSERT OR IGNORE INTO users (id, google_id, email, name, photo, created) VALUES (?, ?, ?, ?, NULL, ?)")
+        .run(id, fakeGoogleId, email, name || email, Date.now());
+      user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+    } else if (name && user.name !== name && !user.google_id.startsWith("import_")) {
+      // Don't overwrite names for real OAuth users
+    }
+    userCache[email] = user;
+    return user;
+  };
+
+  // Build a set of existing (uid, start) pairs to skip duplicates
+  const existingKeys = new Set(
+    db.prepare("SELECT uid, start FROM entries").all()
+      .map(r => `${r.uid}|${r.start}`)
+  );
+
+  const insertMany = db.transaction(rows => {
+    let inserted = 0, skipped = 0;
+    const affectedUsers = new Set();
+
+    for (const r of rows) {
+      if (!r.email || !r.startDate) { skipped++; continue; }
+
+      const user = getOrCreateUser(r.user, r.email);
+      if (!user) { skipped++; continue; }
+
+      // Build ISO datetimes from date + time strings
+      const startISO = `${r.startDate}T${r.startTime || "00:00:00"}`;
+      const endISO   = `${r.endDate}T${r.endTime   || "00:00:00"}`;
+
+      const key = `${user.id}|${startISO}`;
+      if (existingKeys.has(key)) { skipped++; continue; }
+
+      const durationSecs = Math.round((parseFloat(r.durationDecimal) || 0) * 3600);
+      const projectId    = r.project ? (projByName[r.project.toLowerCase()] || null) : null;
+      const tags         = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
+
+      stmt.insertEntry.run({
+        id:         newId(),
+        uid:        user.id,
+        desc:       r.description || "Untitled",
+        project_id: projectId,
+        tags:       JSON.stringify(tags),
+        start:      startISO,
+        end:        endISO,
+        duration:   durationSecs,
+        created:    Date.now(),
+      });
+
+      existingKeys.add(key);
+      affectedUsers.add(user.id);
+      inserted++;
+    }
+    return { inserted, skipped, users: affectedUsers.size };
+  });
+
+  try {
+    const result = insertMany(entries);
+    res.json(result);
+  } catch(err) {
+    console.error("Import error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Admin: change password ────────────────────────────────────────────────────
 app.post("/api/admin/change-password", requireAdmin, (req, res) => {
   const { currentPassword, newPassword } = req.body;
