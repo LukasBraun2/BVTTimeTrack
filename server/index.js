@@ -274,13 +274,24 @@ app.get("/api/auth/admin/check", (req, res) => {
 // ── Formatting helpers ────────────────────────────────────────────────────────
 const fmtSec   = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
 const fmtShort = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; };
-const fmtTime  = d => new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-const fmtDate  = d => {
+const fmtTime = d => {
+  const t = String(d).split("T")[1] || "";
+  const [h, m] = t.split(":");
+  const hour = parseInt(h, 10);
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const h12  = hour % 12 || 12;
+  return `${h12}:${m} ${ampm}`;
+};
+const fmtDate = d => {
+  const dateStr = String(d).split("T")[0]; // "2024-05-01"
   const today = new Date(), yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  const dd = new Date(d);
-  if (dd.toDateString() === today.toDateString())     return "Today";
-  if (dd.toDateString() === yesterday.toDateString()) return "Yesterday";
+  const todayStr     = today.toLocaleDateString("en-CA");
+  const yesterdayStr = yesterday.toLocaleDateString("en-CA");
+  if (dateStr === todayStr)     return "Today";
+  if (dateStr === yesterdayStr) return "Yesterday";
+  const [y, mo, day] = dateStr.split("-").map(Number);
+  const dd = new Date(y, mo - 1, day);
   return dd.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
 };
 
