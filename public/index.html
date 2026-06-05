@@ -476,10 +476,10 @@ window.logManual = async () => {
   const ms = $("manual-start").value, me = $("manual-end").value, md = $("manual-date").value;
   if (!ms || !me) { showTimerErr("Please set both start and end time."); return; }
   if (!md)        { showTimerErr("Please select a date."); return; }
-  const start = new Date(md + "T" + ms), end = new Date(md + "T" + me);
-  const dur = Math.floor((end - start) / 1000);
+  const startStr = md + "T" + ms, endStr = md + "T" + me;
+  const dur = Math.floor((new Date(startStr) - new Date(endStr)) / -1000);
   if (dur < 0) { showTimerErr("End time must be after start time."); return; }
-  await saveEntry({ desc: $("timer-desc").value || "Untitled", projectId: window.selectedProj, tags: [...window.selectedTags], start, end, duration: dur });
+  await saveEntry({ desc: $("timer-desc").value || "Untitled", projectId: window.selectedProj, tags: [...window.selectedTags], start: startStr, end: endStr, duration: dur });
   resetInputs();
   $("manual-start").value = ""; $("manual-end").value = "";
   $("manual-date").value = new Date().toISOString().split("T")[0];
