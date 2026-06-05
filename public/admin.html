@@ -491,8 +491,44 @@ window.handleFileSelect = file => {
     return; // ← don't fall through to the XLSX reader
   }
   // ── XLSX branch (existing logic, unchanged) ───────────────────────────────
+// ── XLSX branch (existing logic, unchanged) ───────────────────────────────
   const reader = new FileReader();
-  // ... rest of existing code unchanged
+  reader.onload = e => {
+    try {
+      const wb   = XLSX.read(e.target.result, { type: "array", cellDates: true });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+      if (rows.length === 0) {
+        prog.className = "import-progress err";
+        prog.textContent = "File is empty or unreadable.";
+        return;
+      }
+
+      // Validate required columns
+      const required = ["User", "Email", "Start Date", "Start Time", "End Date", "End Time", "Duration (decimal)"];
+      const cols = Object.keys(rows[0]);
+      const missing = required.filter(c => !cols.includes(c));
+      if (missing.length) {
+        prog.className = "import-progress err";
+        prog.textContent = `Missing columns: ${missing.join(", ")}`;
+        return;
+      }
+
+      importRows = rows;
+      document.getElementById("drop-zone").classList.add("has-file");
+      document.getElementById("drop-label").textContent = `✓ ${file.name}`;
+      document.getElementById("drop-sub").textContent = `${rows.length.toLocaleString()} rows ready`;
+      document.getElementById("import-run-btn").disabled = false;
+      prog.className = "import-progress ok";
+      prog.textContent = `Parsed ${rows.length.toLocaleString()} entries — click Import to upload.`;
+    } catch(err) {
+      prog.className = "import-progress err";
+      prog.textContent = "Failed to parse file. Is it a valid .xlsx?";
+    }
+  };
+  reader.readAsArrayBuffer(file);
+};
 
 window.runImport = async () => {
   if (!importRows) return;
