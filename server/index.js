@@ -502,24 +502,42 @@ app.get("/api/admin/students", requireAdmin, (req, res) => {
       weekSeconds,
       totalEntries:   filtered.length,
       projBreakdown,
-      entries:        filtered.slice(0, 50).map(e => ({
-        id:                e.id,
-        desc:              e.desc,
-        tags:              e.tags,
-        projectId:         e.projectId,
-        duration:          e.duration,
-        dateShort:         new Date(e.start).toLocaleDateString([], { month: "short", day: "numeric" }),
-        startFormatted:    fmtTime(e.start),
-        endFormatted:      fmtTime(e.end),
-        durationFormatted: fmtSec(e.duration),
-        projectName:       e.projectId ? PROJECTS[e.projectId]?.name  : null,
-        projectColor:      e.projectId ? PROJECTS[e.projectId]?.color : null,
-      })),
     };
   });
 
   students.sort((a, b) => b.weekSeconds - a.weekSeconds);
   res.json(students);
+});
+
+// ── Admin: entries for one student (loaded on expand) ────────────────────────
+app.get("/api/admin/students/:uid/entries", requireAdmin, (req, res) => {
+  const { project = "", period = "week" } = req.query;
+  const ws = weekStart();
+
+  const user = stmt.findUserById.get(req.params.uid);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  let filtered = db.prepare("SELECT * FROM entries WHERE uid = ? ORDER BY start DESC")
+    .all(req.params.uid).map(parseEntry);
+
+  if (period === "week") filtered = filtered.filter(e => new Date(e.start) >= ws);
+  if (project)           filtered = filtered.filter(e => e.projectId === project);
+
+  const entries = filtered.slice(0, 50).map(e => ({
+    id:                e.id,
+    desc:              e.desc,
+    tags:              e.tags,
+    projectId:         e.projectId,
+    duration:          e.duration,
+    dateShort:         new Date(e.start).toLocaleDateString([], { month: "short", day: "numeric" }),
+    startFormatted:    fmtTime(e.start),
+    endFormatted:      fmtTime(e.end),
+    durationFormatted: fmtSec(e.duration),
+    projectName:       e.projectId ? PROJECTS[e.projectId]?.name  : null,
+    projectColor:      e.projectId ? PROJECTS[e.projectId]?.color : null,
+  }));
+
+  res.json({ entries, totalEntries: filtered.length });
 });
 
 // ── Admin: all raw entries (CSV export) ───────────────────────────────────────

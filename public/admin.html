@@ -76,6 +76,8 @@
 const API = window.location.origin;
 
 let expandedUsers = new Set();
+// Cache: uid → { entries, totalEntries } — cleared whenever filters change
+let entryCache = {};
 
 async function loadConfig() {
   try {
@@ -159,14 +161,29 @@ async function loadStudents() {
   }
 }
 
-function loadData() { loadStats(); loadStudents(); }
+function loadData() { entryCache = {}; loadStats(); loadStudents(); }
 
 let searchTimer;
-function debouncedLoad() { clearTimeout(searchTimer); searchTimer = setTimeout(loadStudents, 250); }
+function debouncedLoad() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { entryCache = {}; loadStudents(); }, 250);
+}
 
 setInterval(() => {
   if (document.getElementById("app").style.display !== "none") loadData();
 }, 30000);
+
+// ── Fetch entries for one student (with cache) ────────────────────────────────
+async function fetchEntries(uid) {
+  if (entryCache[uid]) return entryCache[uid];
+  const project = document.getElementById("proj-filter").value;
+  const period  = document.getElementById("week-filter").value;
+  const res = await fetch(`${API}/api/admin/students/${uid}/entries?` + new URLSearchParams({ project, period }));
+  if (!res.ok) throw new Error("Failed to load entries");
+  const data = await res.json();
+  entryCache[uid] = data;
+  return data;
+}
 
 // ── Render — avatar color and initials are pre-computed server-side ───────────
 function renderStudents(students, period) {
@@ -179,32 +196,22 @@ function renderStudents(students, period) {
     const isOpen = expandedUsers.has(u.uid);
     const col    = u.avatarColor;
 
-    const projBreakdownHtml = u.projBreakdown.length > 0
-      ? `<div class="proj-bar">${u.projBreakdown.map(p =>
-          `<span class="proj-pill bg-${p.cls} c-${p.cls}">${p.name} &middot; ${p.formatted}</span>`
-        ).join("")}</div>`
-      : "";
-
-    const entryRows = u.entries.map(e => `
-      <div class="entry-row">
-        <div class="entry-dot" style="background:${e.projectColor||"#444"}"></div>
-        <div style="flex:1;min-width:0;">
-          <div class="entry-desc">${e.desc||"Untitled"}</div>
-          <div style="display:flex;gap:5px;margin-top:3px;flex-wrap:wrap;">
-            ${e.projectName?`<span style="font-size:11px;color:${e.projectColor};font-weight:500;">${e.projectName}</span>`:""}
-            ${(e.tags||[]).map(t=>`<span class="tag-pill">${t}</span>`).join("")}
-          </div>
-        </div>
-        <div class="entry-time mono">${e.dateShort} &middot; ${e.startFormatted}&ndash;${e.endFormatted}</div>
-        <div class="entry-dur mono">${e.durationFormatted}</div>
-      </div>`).join("");
-
     const projCols = u.projBreakdown.slice(0, 3).map(p =>
       `<div class="sstats-item"><div class="sstats-label">${p.name}</div><div class="sstats-val mono" style="color:${p.color}">${p.formatted}</div></div>`
     ).join("");
 
+    // Entries section: show cached content if available, loading state otherwise
+    let entriesContent;
+    if (!isOpen) {
+      entriesContent = "";
+    } else if (entryCache[u.uid]) {
+      entriesContent = renderEntriesContent(u, entryCache[u.uid]);
+    } else {
+      entriesContent = '<div class="no-entries">Loading…</div>';
+    }
+
     return `
-      <div class="student-card fadeIn">
+      <div class="student-card fadeIn" id="card-${u.uid}">
         <div class="student-header" onclick="toggleStudent('${u.uid}')">
           <div class="avatar" style="background:${col}20;color:${col};">${u.initials}</div>
           <div class="student-info">
@@ -223,20 +230,88 @@ function renderStudents(students, period) {
           </div>
           <svg class="chevron${isOpen?" open":""}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
-        <div class="entries-wrap${isOpen?" open":""}">
-          ${projBreakdownHtml}
-          ${u.totalEntries===0?'<div class="no-entries">No entries for this period.</div>':entryRows}
-          ${u.totalEntries>50?`<div class="no-entries" style="font-size:12px;">Showing first 50 of ${u.totalEntries} entries.</div>`:""}
+        <div class="entries-wrap${isOpen?" open":""}" id="entries-${u.uid}">
+          ${entriesContent}
         </div>
       </div>`;
   }).join("");
 }
 
-window.toggleStudent = uid => {
-  if (expandedUsers.has(uid)) expandedUsers.delete(uid);
-  else expandedUsers.add(uid);
-  loadStudents();
+function renderEntriesContent(u, { entries, totalEntries }) {
+  const projBreakdownHtml = u.projBreakdown.length > 0
+    ? `<div class="proj-bar">${u.projBreakdown.map(p =>
+        `<span class="proj-pill bg-${p.cls} c-${p.cls}">${p.name} &middot; ${p.formatted}</span>`
+      ).join("")}</div>`
+    : "";
+
+  const entryRows = entries.map(e => `
+    <div class="entry-row">
+      <div class="entry-dot" style="background:${e.projectColor||"#444"}"></div>
+      <div style="flex:1;min-width:0;">
+        <div class="entry-desc">${e.desc||"Untitled"}</div>
+        <div style="display:flex;gap:5px;margin-top:3px;flex-wrap:wrap;">
+          ${e.projectName?`<span style="font-size:11px;color:${e.projectColor};font-weight:500;">${e.projectName}</span>`:""}
+          ${(e.tags||[]).map(t=>`<span class="tag-pill">${t}</span>`).join("")}
+        </div>
+      </div>
+      <div class="entry-time mono">${e.dateShort} &middot; ${e.startFormatted}&ndash;${e.endFormatted}</div>
+      <div class="entry-dur mono">${e.durationFormatted}</div>
+    </div>`).join("");
+
+  return `
+    ${projBreakdownHtml}
+    ${totalEntries===0?'<div class="no-entries">No entries for this period.</div>':entryRows}
+    ${totalEntries>50?`<div class="no-entries" style="font-size:12px;">Showing first 50 of ${totalEntries} entries.</div>`:""}`;
+}
+
+window.toggleStudent = async uid => {
+  if (expandedUsers.has(uid)) {
+    expandedUsers.delete(uid);
+    // Collapse without a full re-render
+    const wrap    = document.getElementById(`entries-${uid}`);
+    const chevron = document.querySelector(`#card-${uid} .chevron`);
+    if (wrap)    { wrap.classList.remove("open"); wrap.innerHTML = ""; }
+    if (chevron)  chevron.classList.remove("open");
+    return;
+  }
+
+  // Expand: show card immediately, then fill entries async
+  expandedUsers.add(uid);
+  const wrap    = document.getElementById(`entries-${uid}`);
+  const chevron = document.querySelector(`#card-${uid} .chevron`);
+  if (wrap)    { wrap.innerHTML = '<div class="no-entries">Loading…</div>'; wrap.classList.add("open"); }
+  if (chevron)  chevron.classList.add("open");
+
+  try {
+    // Find the student's summary data (already in the DOM) for projBreakdown
+    const studentEl = document.getElementById(`card-${uid}`);
+    // Re-fetch the current student list to get projBreakdown for this uid
+    // (it's cheap — already cached by the browser for this render cycle,
+    //  so we read it from the last known students array instead)
+    const data = await fetchEntries(uid);
+    if (wrap && expandedUsers.has(uid)) {
+      // Get projBreakdown from the rendered student list via a lightweight approach:
+      // pull it from the global lastStudents cache set during renderStudents
+      const u = lastStudents.find(s => s.uid === uid);
+      wrap.innerHTML = u ? renderEntriesContent(u, data) : renderEntriesContent({ projBreakdown: [] }, data);
+    }
+  } catch(e) {
+    console.error("Failed to load entries:", e);
+    if (wrap) wrap.innerHTML = '<div class="no-entries">Failed to load entries.</div>';
+  }
 };
+
+// Keep a reference to the last-rendered student summaries for toggleStudent to use
+let lastStudents = [];
+const _origRender = renderStudents;
+// Wrap renderStudents to capture lastStudents
+(function() {
+  const orig = renderStudents;
+  window.renderStudents = function(students, period) {
+    lastStudents = students;
+    orig(students, period);
+  };
+})();
 
 loadConfig();
 </script>
