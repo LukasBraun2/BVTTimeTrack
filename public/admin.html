@@ -588,6 +588,8 @@ window.runImport = async () => {
   const isPreMapped = importRows[0] && "startDate" in importRows[0];
 
   const payload = isPreMapped ? importRows : importRows.map(r => {
+      console.log("First 6 payload rows:", JSON.stringify(payload.slice(0, 6), null, 2));
+      console.log("Start Time raw:", r["Start Time"], typeof r["Start Time"]);
       const dateVal = r["Start Date"];
       const startDateStr = dateVal instanceof Date
         ? dateVal.toISOString().slice(0, 10)
