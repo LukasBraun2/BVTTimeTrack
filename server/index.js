@@ -787,7 +787,16 @@ app.post("/api/admin/import", requireAdmin, async (req, res) => {
     client.release();
   }
 });
-
+//delete all entries
+app.delete("/api/admin/entries/all", requireAdmin, async (req, res) => {
+  try {
+    await pool.query("TRUNCATE TABLE entries RESTART IDENTITY CASCADE");
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
 // ── Admin: change password ────────────────────────────────────────────────────
 app.post("/api/admin/change-password", requireAdmin, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
