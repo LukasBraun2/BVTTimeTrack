@@ -551,7 +551,74 @@ app.get("/api/admin/entries", requireAdmin, (req, res) => {
   `).all().map(row => ({ ...parseEntry(row), userName: row.user_name || row.user_email }));
   res.json(rows);
 });
+// ── Admin: export entries as CSV ──────────────────────────────────────────────
+app.get("/api/admin/export", requireAdmin, (req, res) => {
+  const { project = "", period = "week", search = "" } = req.query;
+  const ws = weekStart();
 
+  let users = db.prepare("SELECT DISTINCT u.* FROM users u JOIN entries e ON e.uid = u.id").all();
+  if (search) {
+    const q = search.toLowerCase();
+    users = users.filter(u => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+  }
+
+  const uids = new Set(users.map(u => u.id));
+  let entries = db.prepare("SELECT e.*, u.name AS user_name, u.email AS user_email FROM entries e LEFT JOIN users u ON u.id = e.uid ORDER BY e.start DESC")
+    .all().map(row => ({ ...parseEntry(row), userName: row.user_name, userEmail: row.user_email }));
+
+  entries = entries.filter(e => uids.has(e.uid));
+  if (period === "week") entries = entries.filter(e => new Date(e.start) >= ws);
+  if (project)           entries = entries.filter(e => e.projectId === project);
+
+  // Format a Date to MM/DD/YYYY
+  const toDate = iso => {
+    const d = new Date(iso);
+    return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}/${d.getFullYear()}`;
+  };
+  // Format a Date to HH:MM:SS AM/PM
+  const toTime = iso => new Date(iso).toLocaleTimeString("en-US", { hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  // Format seconds to H:MM:SS
+  const toDuration = secs => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    return `${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  };
+
+  const escape = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+
+  const headers = ["Project","Client","Description","Task","User","Group","Email","Tags","Billable","Start Date","Start Time","End Date","End Time","Duration (h)","Duration (decimal)","Date of creation"];
+
+  const rows = entries.map(e => {
+    const proj = e.projectId ? PROJECTS[e.projectId]?.name || "" : "";
+    const dur  = e.duration || 0;
+    return [
+      escape(proj),
+      escape(""),
+      escape(e.desc),
+      escape(""),
+      escape(e.userName || ""),
+      escape(""),
+      escape(e.userEmail || ""),
+      escape((e.tags || []).join(", ")),
+      escape("No"),
+      escape(toDate(e.start)),
+      escape(toTime(e.start)),
+      escape(toDate(e.end)),
+      escape(toTime(e.end)),
+      escape(toDuration(dur)),
+      escape((dur / 3600).toFixed(2)),
+      escape(toDate(e.start)),
+    ].join(",");
+  });
+
+  const csv = [headers.map(h => `"${h}"`).join(","), ...rows].join("\n");
+  const filename = `Tempo_Export_${new Date().toISOString().slice(0,10)}.csv`;
+
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(csv);
+});
 // ── Admin: import entries from Excel export ───────────────────────────────────
 // ── Admin: import entries from Excel/CSV export ───────────────────────────────
 app.post("/api/admin/import", requireAdmin, (req, res) => {
