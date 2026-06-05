@@ -562,43 +562,58 @@ window.runImport = async () => {
   const isPreMapped = importRows[0] && "startDate" in importRows[0];
 
   const payload = isPreMapped ? importRows : importRows.map(r => {
-    const dateVal = r["Start Date"];
-    const startDateStr = dateVal instanceof Date
-      ? dateVal.toISOString().slice(0, 10)
-      : String(dateVal).slice(0, 10);
+      const dateVal = r["Start Date"];
+      const startDateStr = dateVal instanceof Date
+        ? dateVal.toISOString().slice(0, 10)
+        : String(dateVal).slice(0, 10);
+      const endDateVal = r["End Date"];
+      const endDateStr = endDateVal instanceof Date
+        ? endDateVal.toISOString().slice(0, 10)
+        : String(endDateVal).slice(0, 10);
 
-    const endDateVal = r["End Date"];
-    const endDateStr = endDateVal instanceof Date
-      ? endDateVal.toISOString().slice(0, 10)
-      : String(endDateVal).slice(0, 10);
+      const toTimeStr = v => {
+        if (v instanceof Date) return v.toTimeString().slice(0, 8);
+        return String(v || "00:00:00").slice(0, 8);
+      };
 
-    const toTimeStr = v => {
-      if (typeof v === "number") {
-        let totalSecs = Math.round(v * 86400);
-        const h = Math.floor(totalSecs / 3600);
-        const m = Math.floor((totalSecs % 3600) / 60);
-        const s = totalSecs % 60;
-        // Clockify bug: times in the 12:xx hour are actually 00:xx (AM/PM flip)
-        const adjH = (h === 12) ? 0 : h;
-        return `${String(adjH).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+      const timeToSecs = t => {
+        const [h, m, s] = t.split(":").map(Number);
+        return h * 3600 + m * 60 + (s || 0);
+      };
+
+      let startTime = toTimeStr(r["Start Time"]);
+      let endTime   = toTimeStr(r["End Time"]);
+      const durSecs = Math.round((parseFloat(r["Duration (decimal)"]) || 0) * 3600);
+
+      const startSecs = timeToSecs(startTime);
+      const endSecs   = timeToSecs(endTime);
+
+      // If start + duration doesn't land near end, try shifting start by +12 hours
+      if (durSecs > 0) {
+        const expectedEnd = (startSecs + durSecs) % 86400;
+        const diff = Math.abs(expectedEnd - endSecs);
+        const diffWithShift = Math.abs((startSecs + 43200 + durSecs) % 86400 - endSecs);
+        if (diffWithShift < diff) {
+          const shiftedH = (Math.floor(startSecs / 3600) + 12) % 24;
+          const mm = String(Math.floor((startSecs % 3600) / 60)).padStart(2, "0");
+          const ss = String(startSecs % 60).padStart(2, "0");
+          startTime = `${String(shiftedH).padStart(2, "0")}:${mm}:${ss}`;
+        }
       }
-      if (v instanceof Date) return v.toTimeString().slice(0, 8);
-      return String(v || "00:00:00").slice(0, 8);
-    };
 
-    return {
-      user:            String(r["User"] || "").trim(),
-      email:           String(r["Email"] || "").trim().toLowerCase(),
-      description:     String(r["Description"] || "").trim(),
-      project:         String(r["Project"] || "").trim(),
-      tags:            String(r["Tags"] || "").trim(),
-      startDate:       startDateStr,
-      startTime:       toTimeStr(r["Start Time"]),
-      endDate:         endDateStr,
-      endTime:         toTimeStr(r["End Time"]),
-      durationDecimal: parseFloat(r["Duration (decimal)"]) || 0,
-    };
-  }).filter(r => r.email && r.startDate && r.endDate);
+      return {
+        user:            String(r["User"] || "").trim(),
+        email:           String(r["Email"] || "").trim().toLowerCase(),
+        description:     String(r["Description"] || "").trim(),
+        project:         String(r["Project"] || "").trim(),
+        tags:            String(r["Tags"] || "").trim(),
+        startDate:       startDateStr,
+        startTime:       startTime,
+        endDate:         endDateStr,
+        endTime:         endTime,
+        durationDecimal: parseFloat(r["Duration (decimal)"]) || 0,
+      };
+    }).filter(r => r.email && r.startDate && r.endDate);
 
 try {
     const res = await fetch(`${API}/api/admin/import`, {
