@@ -572,7 +572,13 @@ window.runImport = async () => {
         : String(endDateVal).slice(0, 10);
 
       const toTimeStr = v => {
-        if (v instanceof Date) return v.toTimeString().slice(0, 8);
+        if (typeof v === "number") {
+          const totalSecs = Math.round(v * 86400);
+          const h = Math.floor(totalSecs / 3600);
+          const m = Math.floor((totalSecs % 3600) / 60);
+          const s = totalSecs % 60;
+          return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+        }
         return String(v || "00:00:00").slice(0, 8);
       };
 
