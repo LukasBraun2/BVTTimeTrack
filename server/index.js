@@ -506,18 +506,24 @@ app.delete("/api/entries/:id", requireAuth, async (req, res) => {
 // ── Admin: aggregated stats ───────────────────────────────────────────────────
 app.get("/api/admin/stats", requireAdmin, async (req, res) => {
   try {
+    const { period = "week" } = req.query;  // ✅ read period
     const ws = weekStart();
 
-    const { rows: r1 } = await pool.query(
-      "SELECT COALESCE(SUM(duration),0)::int AS weeksecs FROM entries WHERE start >= $1",
-      [ws.toISOString()]
-    );
+    const { rows: r1 } = period === "all"
+      ? await pool.query("SELECT COALESCE(SUM(duration),0)::int AS weeksecs FROM entries")
+      : await pool.query(
+          "SELECT COALESCE(SUM(duration),0)::int AS weeksecs FROM entries WHERE start >= $1",
+          [ws.toISOString()]
+        );
+
     const { rows: r2 } = await pool.query("SELECT COUNT(*)::int AS totalentries FROM entries");
     const { rows: r3 } = await pool.query("SELECT COUNT(DISTINCT uid)::int AS totalstudents FROM entries");
-    const { rows: r4 } = await pool.query(
-      "SELECT COUNT(DISTINCT uid)::int AS weekstudents FROM entries WHERE start >= $1",
-      [ws.toISOString()]
-    );
+    const { rows: r4 } = period === "all"
+      ? await pool.query("SELECT COUNT(DISTINCT uid)::int AS weekstudents FROM entries")
+      : await pool.query(
+          "SELECT COUNT(DISTINCT uid)::int AS weekstudents FROM entries WHERE start >= $1",
+          [ws.toISOString()]
+        );
 
     const weekSecs      = r1[0].weeksecs;
     const totalEntries  = r2[0].totalentries;

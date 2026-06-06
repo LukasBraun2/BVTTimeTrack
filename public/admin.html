@@ -213,7 +213,7 @@ function showApp() {
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 async function loadStats() {
-  const period = document.getElementById("week-filter").value;
+  const period = document.getElementById("week-filter").value;  // ✅ read filter
   try {
     const res = await fetch(`${API}/api/admin/stats?` + new URLSearchParams({ period }));
     if (!res.ok) { signOutAdmin(); return; }
@@ -223,12 +223,12 @@ async function loadStats() {
     document.getElementById("stat-entries").textContent  = s.totalEntries;
     document.getElementById("stat-avg").textContent      = s.avgWeekFormatted;
 
-    // ✅ Update label and sub-text to match the selected period
-    const isAllTime = period === "all";
-    document.querySelector("#stat-week").closest(".stat-card").querySelector(".stat-label").textContent =
-      isAllTime ? "Hours all time" : "Hours this week";
-    document.querySelector("#stat-week").closest(".stat-card").querySelector(".stat-sub").textContent =
-      isAllTime ? "across all students" : "across all students";
+    // ✅ Update label to match selected period
+    const statWeekCard = document.getElementById("stat-week").closest(".stat-card");
+    statWeekCard.querySelector(".stat-label").textContent = period === "all" ? "Hours all time" : "Hours this week";
+
+    const statAvgCard = document.getElementById("stat-avg").closest(".stat-card");
+    statAvgCard.querySelector(".stat-label").textContent = period === "all" ? "Avg all time" : "Avg this week";
   } catch(e) { console.error("Failed to load stats:", e); }
 }
 
