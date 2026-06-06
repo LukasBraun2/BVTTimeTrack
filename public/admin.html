@@ -213,14 +213,22 @@ function showApp() {
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 async function loadStats() {
+  const period = document.getElementById("week-filter").value;
   try {
-    const res = await fetch(`${API}/api/admin/stats`);
+    const res = await fetch(`${API}/api/admin/stats?` + new URLSearchParams({ period }));
     if (!res.ok) { signOutAdmin(); return; }
     const s = await res.json();
     document.getElementById("stat-students").textContent = s.totalStudents;
     document.getElementById("stat-week").textContent     = s.weekFormatted;
     document.getElementById("stat-entries").textContent  = s.totalEntries;
     document.getElementById("stat-avg").textContent      = s.avgWeekFormatted;
+
+    // ✅ Update label and sub-text to match the selected period
+    const isAllTime = period === "all";
+    document.querySelector("#stat-week").closest(".stat-card").querySelector(".stat-label").textContent =
+      isAllTime ? "Hours all time" : "Hours this week";
+    document.querySelector("#stat-week").closest(".stat-card").querySelector(".stat-sub").textContent =
+      isAllTime ? "across all students" : "across all students";
   } catch(e) { console.error("Failed to load stats:", e); }
 }
 
