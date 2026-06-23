@@ -229,11 +229,14 @@ async function loadConfig() {
     ui.projects.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
 
   // Tags dropdown
-  document.getElementById("tags-drop").innerHTML =
-    ui.tags.map(t => {
-      const slug = t.replace(/\s+/g, "-");
-      return `<div class="ditem" id="tag-opt-${slug}" onclick="event.stopPropagation();toggleTag(${JSON.stringify(t)})"><span class="check-box" id="chk-${slug}"></span>${t}</div>`;
-    }).join("");
+  const tagsDrop = document.getElementById("tags-drop");
+  tagsDrop.innerHTML = ui.tags.map(t => {
+    const slug = t.replace(/\s+/g, "-");
+    return `<div class="ditem" id="tag-opt-${slug}" data-tag="${t.replace(/"/g,'&quot;')}"><span class="check-box" id="chk-${slug}"></span>${t}</div>`;
+  }).join("");
+  tagsDrop.querySelectorAll(".ditem").forEach(el => {
+    el.addEventListener("click", e => { e.stopPropagation(); toggleTag(el.dataset.tag); });
+  });
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -420,18 +423,14 @@ window.selectProj = id => {
 
 // ── Tags ──────────────────────────────────────────────────────────────────────
 window.toggleTag = t => {
-  console.log("toggleTag called with:", t, "TAGS:", TAGS, "selectedTags before:", [...window.selectedTags]);
   const idx = window.selectedTags.indexOf(t);
   if (idx > -1) window.selectedTags.splice(idx, 1); else window.selectedTags.push(t);
-  console.log("selectedTags after:", [...window.selectedTags]);
   refreshTagsUI();
 };
 function refreshTagsUI() {
-  console.log("refreshTagsUI called, TAGS:", TAGS, "selectedTags:", [...window.selectedTags]);
   TAGS.forEach(t => {
     const slug = t.replace(/\s+/g, "-");
     const chk = document.getElementById("chk-" + slug);
-    console.log("looking for chk-" + slug, "found:", chk);
     if (!chk) return;
     const on = window.selectedTags.includes(t);
     chk.className = "check-box" + (on ? " checked" : "");
@@ -441,13 +440,16 @@ function refreshTagsUI() {
   if (window.selectedTags.length > 0) { chip.classList.add("active"); txt.textContent = window.selectedTags.join(", "); }
   else { chip.classList.remove("active"); txt.textContent = "Tags"; }
 
-  // Render selected tag pills inside the timer card
+  // Render selected tag pills inside the timer card using data attributes to avoid quoting issues
   const bar = $("selected-tags-bar");
   if (window.selectedTags.length > 0) {
     bar.style.display = "flex";
     bar.innerHTML = window.selectedTags.map(t =>
-      `<span class="selected-tag-pill" onclick="toggleTag(${JSON.stringify(t)})">${t}<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-left:5px;flex-shrink:0;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>`
+      `<span class="selected-tag-pill" data-tag="${t.replace(/"/g,'&quot;')}">${t}<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-left:5px;flex-shrink:0;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>`
     ).join("");
+    bar.querySelectorAll(".selected-tag-pill").forEach(el => {
+      el.addEventListener("click", () => toggleTag(el.dataset.tag));
+    });
   } else {
     bar.style.display = "none";
     bar.innerHTML = "";
