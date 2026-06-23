@@ -420,13 +420,18 @@ window.selectProj = id => {
 
 // ── Tags ──────────────────────────────────────────────────────────────────────
 window.toggleTag = t => {
+  console.log("toggleTag called with:", t, "TAGS:", TAGS, "selectedTags before:", [...window.selectedTags]);
   const idx = window.selectedTags.indexOf(t);
   if (idx > -1) window.selectedTags.splice(idx, 1); else window.selectedTags.push(t);
+  console.log("selectedTags after:", [...window.selectedTags]);
   refreshTagsUI();
 };
 function refreshTagsUI() {
+  console.log("refreshTagsUI called, TAGS:", TAGS, "selectedTags:", [...window.selectedTags]);
   TAGS.forEach(t => {
-    const chk = document.getElementById("chk-" + t.replace(/\s+/g, "-"));
+    const slug = t.replace(/\s+/g, "-");
+    const chk = document.getElementById("chk-" + slug);
+    console.log("looking for chk-" + slug, "found:", chk);
     if (!chk) return;
     const on = window.selectedTags.includes(t);
     chk.className = "check-box" + (on ? " checked" : "");
