@@ -125,6 +125,7 @@
               </button>
             </div>
           </div>
+          <div id="selected-tags-bar" style="display:none;padding-top:10px;flex-wrap:wrap;gap:6px;align-items:center;"></div>
           <div class="timer-err" id="timer-err" style="display:none;"></div>
         </div>
 
@@ -434,6 +435,18 @@ function refreshTagsUI() {
   const chip = $("tags-chip"), txt = $("tags-chip-text");
   if (window.selectedTags.length > 0) { chip.classList.add("active"); txt.textContent = window.selectedTags.join(", "); }
   else { chip.classList.remove("active"); txt.textContent = "Tags"; }
+
+  // Render selected tag pills inside the timer card
+  const bar = $("selected-tags-bar");
+  if (window.selectedTags.length > 0) {
+    bar.style.display = "flex";
+    bar.innerHTML = window.selectedTags.map(t =>
+      `<span class="selected-tag-pill" onclick="toggleTag(${JSON.stringify(t)})">${t}<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-left:5px;flex-shrink:0;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>`
+    ).join("");
+  } else {
+    bar.style.display = "none";
+    bar.innerHTML = "";
+  }
 }
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
