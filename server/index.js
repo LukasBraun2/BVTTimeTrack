@@ -324,8 +324,7 @@ app.get("/api/entries/list", requireAuth, async (req, res) => {
     const days = Object.entries(dayMap).map(([label, dayEntries]) => {
       const groupMap = {};
       dayEntries.forEach(e => {
-        const tagsKey = (e.tags || []).slice().sort().join(",");
-        const k = (e.desc || "Untitled") + "||" + (e.projectId || "") + "||" + tagsKey;
+        const k = (e.desc || "Untitled") + "||" + (e.projectId || "");
         if (!groupMap[k]) groupMap[k] = [];
         groupMap[k].push(e);
       });
