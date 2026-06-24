@@ -171,22 +171,6 @@ body{background:var(--bg0);color:var(--t0);font-family:'Plus Jakarta Sans',syste
 .btn-pri{background:var(--accent);color:#0A0B0F;border:none;border-radius:7px;padding:9px 20px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s;}
 .btn-pri:hover{opacity:.88;}
 
-/* ── Date/time picker icons (Chrome/Edge) ── */
-.time-input::-webkit-calendar-picker-indicator,
-.field input[type="date"]::-webkit-calendar-picker-indicator,
-.field input[type="time"]::-webkit-calendar-picker-indicator,
-.field input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-  filter: invert(1);
-  cursor: pointer;
-  opacity: 0.7;
-}
-.time-input::-webkit-calendar-picker-indicator:hover,
-.field input[type="date"]::-webkit-calendar-picker-indicator:hover,
-.field input[type="time"]::-webkit-calendar-picker-indicator:hover,
-.field input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
-  opacity: 1;
-}
-
 /* ── Animations ── */
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
 .pulse{animation:pulse 1.8s ease-in-out infinite;}
