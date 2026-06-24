@@ -322,17 +322,11 @@ app.get("/api/entries/list", requireAuth, async (req, res) => {
     });
 
     const days = Object.entries(dayMap).map(([label, dayEntries]) => {
-      const groupMap = {};
-      dayEntries.forEach(e => {
-        const k = (e.desc || "Untitled") + "||" + (e.projectId || "");
-        if (!groupMap[k]) groupMap[k] = [];
-        groupMap[k].push(e);
-      });
-      const groups = Object.entries(groupMap).map(([key, ge]) => ({
-        key,
-        hasMultiple:    ge.length > 1,
-        totalFormatted: fmtSec(ge.reduce((s, e) => s + e.duration, 0)),
-        entries:        ge,
+      const groups = dayEntries.map((e, i) => ({
+        key:            e.id || String(i),
+        hasMultiple:    false,
+        totalFormatted: e.durationFormatted,
+        entries:        [e],
       }));
       return {
         label,
