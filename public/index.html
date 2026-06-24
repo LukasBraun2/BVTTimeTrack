@@ -396,7 +396,7 @@ window.toggleDrop = (e, id, btn) => {
     drop.classList.add("open");
   }
 };
-document.addEventListener("click", () => document.querySelectorAll(".drop").forEach(d => d.classList.remove("open")));
+document.addEventListener("click", e => { if (!e.target.closest(".drop") && !e.target.closest(".chip")) document.querySelectorAll(".drop").forEach(d => d.classList.remove("open")); });
 
 // ── Project select ─────────────────────────────────────────────────────────────
 window.selectProj = id => {
