@@ -500,24 +500,30 @@ app.delete("/api/entries/:id", requireAuth, async (req, res) => {
 // ── Admin: aggregated stats ───────────────────────────────────────────────────
 app.get("/api/admin/stats", requireAdmin, async (req, res) => {
   try {
-    const { period = "week" } = req.query;
-    const ps = periodStart(period);
+    const { period = "week", date = "" } = req.query;
+    const ps = periodStart(period, date);
+    const pe = periodEnd(period, date);
 
-    const { rows: r1 } = ps
-      ? await pool.query(
-          "SELECT COALESCE(SUM(duration),0)::int AS weeksecs FROM entries WHERE start >= $1",
-          [ps.toISOString()]
-        )
-      : await pool.query("SELECT COALESCE(SUM(duration),0)::int AS weeksecs FROM entries");
+    let r1, r2, r3, r4;
 
-    const { rows: r2 } = await pool.query("SELECT COUNT(*)::int AS totalentries FROM entries");
-    const { rows: r3 } = await pool.query("SELECT COUNT(DISTINCT uid)::int AS totalstudents FROM entries");
-    const { rows: r4 } = ps
-      ? await pool.query(
-          "SELECT COUNT(DISTINCT uid)::int AS weekstudents FROM entries WHERE start >= $1",
-          [ps.toISOString()]
-        )
-      : await pool.query("SELECT COUNT(DISTINCT uid)::int AS weekstudents FROM entries");
+    const buildRange = (col) => {
+      if (ps && pe) return { where: `AND ${col} >= $1 AND ${col} <= $2`, params: [ps.toISOString(), pe.toISOString()] };
+      if (ps)       return { where: `AND ${col} >= $1`, params: [ps.toISOString()] };
+      return         { where: "", params: [] };
+    };
+
+    const range = buildRange("start");
+
+    ({ rows: r1 } = await pool.query(
+      `SELECT COALESCE(SUM(duration),0)::int AS weeksecs FROM entries WHERE true ${range.where}`,
+      range.params
+    ));
+    ({ rows: r2 } = await pool.query("SELECT COUNT(*)::int AS totalentries FROM entries"));
+    ({ rows: r3 } = await pool.query("SELECT COUNT(DISTINCT uid)::int AS totalstudents FROM entries"));
+    ({ rows: r4 } = await pool.query(
+      `SELECT COUNT(DISTINCT uid)::int AS weekstudents FROM entries WHERE true ${range.where}`,
+      range.params
+    ));
 
     const weekSecs      = r1[0].weeksecs;
     const totalEntries  = r2[0].totalentries;
@@ -542,8 +548,9 @@ app.get("/api/admin/stats", requireAdmin, async (req, res) => {
 // ── Admin: students view ──────────────────────────────────────────────────────
 app.get("/api/admin/students", requireAdmin, async (req, res) => {
   try {
-    const { project = "", period = "week", search = "" } = req.query;
-    const ps = periodStart(period);
+    const { project = "", period = "week", search = "", date = "" } = req.query;
+    const ps = periodStart(period, date);
+    const pe = periodEnd(period, date);
     const ws = weekStart();
 
     const { rows: allUsers } = await pool.query(
@@ -571,6 +578,7 @@ app.get("/api/admin/students", requireAdmin, async (req, res) => {
 
       let filtered = allRows;
       if (ps) filtered = filtered.filter(e => new Date(e.start) >= ps);
+      if (pe) filtered = filtered.filter(e => new Date(e.start) <= pe);
       if (project) filtered = filtered.filter(e => e.projectId === project);
 
       const weekRows = allRows.filter(e => new Date(e.start) >= ws);
@@ -579,6 +587,7 @@ app.get("/api/admin/students", requireAdmin, async (req, res) => {
       allRows
         .filter(e => e.projectId && (!project || e.projectId === project))
         .filter(e => !ps || new Date(e.start) >= ps)
+        .filter(e => !pe || new Date(e.start) <= pe)
         .forEach(e => { projTotals[e.projectId] = (projTotals[e.projectId] || 0) + e.duration; });
 
       const projBreakdown = Object.entries(projTotals)
@@ -616,8 +625,9 @@ app.get("/api/admin/students", requireAdmin, async (req, res) => {
 // ── Admin: entries for one student ───────────────────────────────────────────
 app.get("/api/admin/students/:uid/entries", requireAdmin, async (req, res) => {
   try {
-    const { project = "", period = "week" } = req.query;
-    const ps = periodStart(period);
+    const { project = "", period = "week", date = "" } = req.query;
+    const ps = periodStart(period, date);
+    const pe = periodEnd(period, date);
 
     const { rows: userRows } = await pool.query("SELECT * FROM users WHERE id = $1", [req.params.uid]);
     if (!userRows[0]) return res.status(404).json({ error: "User not found" });
@@ -629,6 +639,7 @@ app.get("/api/admin/students/:uid/entries", requireAdmin, async (req, res) => {
     let filtered = rows.map(parseEntry);
 
     if (ps)      filtered = filtered.filter(e => new Date(e.start) >= ps);
+    if (pe)      filtered = filtered.filter(e => new Date(e.start) <= pe);
     if (project) filtered = filtered.filter(e => e.projectId === project);
 
     const entries = filtered.slice(0, 50).map(e => ({
@@ -670,8 +681,9 @@ app.get("/api/admin/entries", requireAdmin, async (req, res) => {
 // ── Admin: export CSV ─────────────────────────────────────────────────────────
 app.get("/api/admin/export", requireAdmin, async (req, res) => {
   try {
-    const { project = "", period = "week", search = "" } = req.query;
-    const ps = periodStart(period);
+    const { project = "", period = "week", search = "", date = "" } = req.query;
+    const ps = periodStart(period, date);
+    const pe = periodEnd(period, date);
 
     let { rows: users } = await pool.query(
       "SELECT DISTINCT u.* FROM users u JOIN entries e ON e.uid = u.id"
@@ -692,6 +704,7 @@ app.get("/api/admin/export", requireAdmin, async (req, res) => {
       .filter(e => uids.has(e.uid));
 
     if (ps)      entries = entries.filter(e => new Date(e.start) >= ps);
+    if (pe)      entries = entries.filter(e => new Date(e.start) <= pe);
     if (project) entries = entries.filter(e => e.projectId === project);
 
     const toDate     = iso => { const d=new Date(iso); return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}/${d.getFullYear()}`; };
@@ -847,10 +860,23 @@ function monthStart() {
   return ms;
 }
 
-function periodStart(period) {
+function periodStart(period, date) {
+  if (period === "day" && date) {
+    // date is "YYYY-MM-DD"
+    const d = new Date(date + "T00:00:00");
+    return isNaN(d.getTime()) ? null : d;
+  }
   if (period === "week")  return weekStart();
   if (period === "month") return monthStart();
   return null; // "all"
+}
+
+function periodEnd(period, date) {
+  if (period === "day" && date) {
+    const d = new Date(date + "T23:59:59.999");
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null; // no upper bound for other periods
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
