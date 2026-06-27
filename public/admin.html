@@ -98,11 +98,31 @@
     <select class="filter-select" id="proj-filter" onchange="loadData()">
       <option value="">All projects</option>
     </select>
-    <select class="filter-select" id="week-filter" onchange="loadData()">
+    <select class="filter-select" id="week-filter" onchange="onPeriodChange()">
       <option value="week">This week</option>
       <option value="month">This month</option>
       <option value="all">All time</option>
     </select>
+    <!-- Calendar date picker -->
+    <div class="cal-wrap" id="cal-wrap">
+      <button class="cal-btn" id="cal-btn" onclick="toggleCal()" title="Pick a specific day">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span id="cal-label">Pick date</span>
+        <span class="cal-clear" id="cal-clear" style="display:none" onclick="clearDate(event)" title="Clear date">&#x2715;</span>
+      </button>
+      <div class="cal-popup hidden" id="cal-popup">
+        <div class="cal-year-row">
+          <select id="cal-year-sel" onchange="calGoYear()"></select>
+          <button class="cal-today-btn" onclick="calGoToday()">Today</button>
+        </div>
+        <div class="cal-header">
+          <button class="cal-nav" onclick="calShiftMonth(-1)">&#x2039;</button>
+          <span class="cal-month-label" id="cal-month-label"></span>
+          <button class="cal-nav" onclick="calShiftMonth(1)">&#x203A;</button>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+      </div>
+    </div>
   </div>
 
   <div class="table-wrap">
@@ -145,9 +165,164 @@
 </div>
 
 <script>
+// ── Calendar picker ───────────────────────────────────────────────────────────
+let calSelectedDate = null; // "YYYY-MM-DD" or null
+let calViewYear  = new Date().getFullYear();
+let calViewMonth = new Date().getMonth(); // 0-based
+const CAL_MIN_YEAR = 2020;
+const CAL_MAX_YEAR = new Date().getFullYear();
+
+function buildYearSelect() {
+  const sel = document.getElementById('cal-year-sel');
+  sel.innerHTML = '';
+  for (let y = CAL_MAX_YEAR; y >= CAL_MIN_YEAR; y--) {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    if (y === calViewYear) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+const MONTHS = ['January','February','March','April','May','June',
+                'July','August','September','October','November','December'];
+const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+function renderCal() {
+  buildYearSelect();
+  document.getElementById('cal-month-label').textContent = `${MONTHS[calViewMonth]} ${calViewYear}`;
+
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = DAYS.map(d => `<div class="cal-dow">${d}</div>`).join('');
+
+  const today = new Date();
+  const todayStr = toDateStr(today);
+  const firstDay = new Date(calViewYear, calViewMonth, 1).getDay();
+  const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
+  const minDate = new Date(CAL_MIN_YEAR, 0, 1);
+
+  // Blanks before first day
+  for (let i = 0; i < firstDay; i++) {
+    grid.innerHTML += `<div class="cal-day empty"></div>`;
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dt = new Date(calViewYear, calViewMonth, d);
+    const dtStr = toDateStr(dt);
+    const isToday    = dtStr === todayStr;
+    const isSelected = dtStr === calSelectedDate;
+    const isDisabled = dt > today || dt < minDate;
+    const cls = ['cal-day',
+      isSelected ? 'selected' : '',
+      isToday && !isSelected ? 'today' : '',
+      isDisabled ? 'disabled' : ''
+    ].filter(Boolean).join(' ');
+    const click = isDisabled ? '' : `onclick="calPickDay('${dtStr}')"`;
+    grid.innerHTML += `<div class="${cls}" ${click}>${d}</div>`;
+  }
+}
+
+function toDateStr(dt) {
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+}
+
+function calShiftMonth(delta) {
+  calViewMonth += delta;
+  if (calViewMonth > 11) { calViewMonth = 0; calViewYear++; }
+  if (calViewMonth < 0)  { calViewMonth = 11; calViewYear--; }
+  calViewYear = Math.max(CAL_MIN_YEAR, Math.min(CAL_MAX_YEAR, calViewYear));
+  renderCal();
+}
+
+function calGoYear() {
+  calViewYear = parseInt(document.getElementById('cal-year-sel').value);
+  renderCal();
+}
+
+function calGoToday() {
+  const t = new Date();
+  calViewYear  = t.getFullYear();
+  calViewMonth = t.getMonth();
+  renderCal();
+}
+
+function calPickDay(dateStr) {
+  calSelectedDate = dateStr;
+  // Format nicely for the button label
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const label = `${MONTHS[m-1].slice(0,3)} ${d}, ${y}`;
+  document.getElementById('cal-label').textContent = label;
+  document.getElementById('cal-btn').classList.add('active');
+  document.getElementById('cal-clear').style.display = '';
+  // Deactivate the period select visually (optional: reset to "all" so stats reflect full history)
+  closeCal();
+  loadData();
+}
+
+function clearDate(e) {
+  e.stopPropagation();
+  calSelectedDate = null;
+  document.getElementById('cal-label').textContent = 'Pick date';
+  document.getElementById('cal-btn').classList.remove('active');
+  document.getElementById('cal-clear').style.display = 'none';
+  loadData();
+}
+
+function toggleCal() {
+  const popup = document.getElementById('cal-popup');
+  if (popup.classList.contains('hidden')) {
+    // Sync view to selected date or today
+    if (calSelectedDate) {
+      const [y, m] = calSelectedDate.split('-').map(Number);
+      calViewYear = y; calViewMonth = m - 1;
+    } else {
+      calViewYear = new Date().getFullYear();
+      calViewMonth = new Date().getMonth();
+    }
+    renderCal();
+    popup.classList.remove('hidden');
+    setTimeout(() => document.addEventListener('click', calOutsideClick), 0);
+  } else {
+    closeCal();
+  }
+}
+
+function closeCal() {
+  document.getElementById('cal-popup').classList.add('hidden');
+  document.removeEventListener('click', calOutsideClick);
+}
+
+function calOutsideClick(e) {
+  if (!e.target.closest('#cal-wrap')) closeCal();
+}
+
+function onPeriodChange() {
+  // Changing period filter clears any selected date
+  if (calSelectedDate) {
+    calSelectedDate = null;
+    document.getElementById('cal-label').textContent = 'Pick date';
+    document.getElementById('cal-btn').classList.remove('active');
+    document.getElementById('cal-clear').style.display = 'none';
+  }
+  loadData();
+}
+
+// ── Helper: build common query params (date OR period) ────────────────────────
+function buildParams(extras = {}) {
+  const base = {
+    project: document.getElementById('proj-filter').value,
+    search:  (extras.search !== undefined ? extras.search : (document.getElementById('search-input')?.value || '')),
+  };
+  if (calSelectedDate) {
+    base.period = 'day';
+    base.date   = calSelectedDate;
+  } else {
+    base.period = document.getElementById('week-filter').value;
+  }
+  return new URLSearchParams({ ...base, ...extras });
+}
+
 const API = window.location.origin;
 
-// ── Mobile menu ──
 function toggleMobileMenu() {
   const dd = document.getElementById('mobile-dropdown');
   const btn = document.getElementById('mobile-menu-btn');
@@ -224,9 +399,10 @@ function showApp() {
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 async function loadStats() {
-  const period = document.getElementById("week-filter").value;  // ✅ read filter
+  const period = calSelectedDate ? 'day' : document.getElementById("week-filter").value;
+  const params = buildParams({ search: '' });
   try {
-    const res = await fetch(`${API}/api/admin/stats?` + new URLSearchParams({ period }));
+    const res = await fetch(`${API}/api/admin/stats?` + params);
     if (!res.ok) { signOutAdmin(); return; }
     const s = await res.json();
     document.getElementById("stat-students").textContent = s.totalStudents;
@@ -236,23 +412,25 @@ async function loadStats() {
 
     // ✅ Update label to match selected period
     const statWeekCard = document.getElementById("stat-week").closest(".stat-card");
-    if (period === "all")        statWeekCard.querySelector(".stat-label").textContent = "Hours all time";
-    else if (period === "month") statWeekCard.querySelector(".stat-label").textContent = "Hours this month";
-    else                         statWeekCard.querySelector(".stat-label").textContent = "Hours this week";
+    if (period === "day")         statWeekCard.querySelector(".stat-label").textContent = "Hours on date";
+    else if (period === "all")    statWeekCard.querySelector(".stat-label").textContent = "Hours all time";
+    else if (period === "month")  statWeekCard.querySelector(".stat-label").textContent = "Hours this month";
+    else                          statWeekCard.querySelector(".stat-label").textContent = "Hours this week";
 
     const statAvgCard = document.getElementById("stat-avg").closest(".stat-card");
-    if (period === "all")        statAvgCard.querySelector(".stat-label").textContent = "Avg all time";
-    else if (period === "month") statAvgCard.querySelector(".stat-label").textContent = "Avg this month";
-    else                         statAvgCard.querySelector(".stat-label").textContent = "Avg this week";
+    if (period === "day")         statAvgCard.querySelector(".stat-label").textContent = "Avg on date";
+    else if (period === "all")    statAvgCard.querySelector(".stat-label").textContent = "Avg all time";
+    else if (period === "month")  statAvgCard.querySelector(".stat-label").textContent = "Avg this month";
+    else                          statAvgCard.querySelector(".stat-label").textContent = "Avg this week";
   } catch(e) { console.error("Failed to load stats:", e); }
 }
 
 async function loadStudents() {
   const search  = document.getElementById("search-input").value;
-  const project = document.getElementById("proj-filter").value;
-  const period  = document.getElementById("week-filter").value;
+  const period  = calSelectedDate ? 'day' : document.getElementById("week-filter").value;
+  const params  = buildParams({ search });
   try {
-    const res = await fetch(`${API}/api/admin/students?` + new URLSearchParams({ project, period, search }));
+    const res = await fetch(`${API}/api/admin/students?` + params);
     if (!res.ok) { signOutAdmin(); return; }
     const students = await res.json();
     renderStudents(students, period);
@@ -312,9 +490,8 @@ window.deleteAllEntries = async () => {
 // ── Fetch entries for one student (with cache) ────────────────────────────────
 async function fetchEntries(uid) {
   if (entryCache[uid]) return entryCache[uid];
-  const project = document.getElementById("proj-filter").value;
-  const period  = document.getElementById("week-filter").value;
-  const res = await fetch(`${API}/api/admin/students/${uid}/entries?` + new URLSearchParams({ project, period }));
+  const params = buildParams({ search: '' });
+  const res = await fetch(`${API}/api/admin/students/${uid}/entries?` + params);
   if (!res.ok) throw new Error("Failed to load entries");
   const data = await res.json();
   entryCache[uid] = data;
@@ -356,7 +533,7 @@ function renderStudents(students, period) {
           <div class="student-stats">
             ${projCols}
             <div class="sstats-item">
-              <div class="sstats-label">${period==="week"?"This week":period==="month"?"This month":"Total"}</div>
+              <div class="sstats-label">${period==="day"?"On date":period==="week"?"This week":period==="month"?"This month":"Total"}</div>
               <div class="sstats-val mono">${u.totalFormatted}</div>
             </div>
             <div class="sstats-item">
@@ -728,9 +905,7 @@ try {
 };
 window.exportCSV = async () => {
   const search  = document.getElementById("search-input").value;
-  const project = document.getElementById("proj-filter").value;
-  const period  = document.getElementById("week-filter").value;
-  const params  = new URLSearchParams({ project, period, search });
+  const params  = buildParams({ search });
 
   try {
     const res = await fetch(`${API}/api/admin/export?${params}`);
