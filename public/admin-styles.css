@@ -79,6 +79,8 @@ header h1{font-size:14px;font-weight:600;letter-spacing:-.01em;}
 .proj-bar{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:8px;}
 .proj-pill{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:500;}
 .entry-row{display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--border);font-size:13px;}
+.entry-avatar{width:26px;height:26px;font-size:11px;}
+.entry-student-name{font-weight:500;color:var(--t0);min-width:120px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;}
 .entry-row:last-child{border-bottom:none;}
 .entry-row:hover{background:var(--bg3);}
 .entry-dot{width:3px;height:30px;border-radius:2px;flex-shrink:0;}
@@ -129,6 +131,7 @@ header h1{font-size:14px;font-weight:600;letter-spacing:-.01em;}
   .sstats-item{display:block !important;text-align:left;}
   .chevron{align-self:flex-start;margin-top:4px;}
   .entry-row{flex-wrap:wrap;gap:6px;padding:10px 12px;}
+  .entry-student-name{max-width:140px;}
   .entry-dot{height:20px;align-self:flex-start;margin-top:3px;}
   .entry-desc{flex:1 1 calc(100% - 20px);}
   .entry-time{min-width:unset;text-align:left;width:100%;padding-left:15px;}

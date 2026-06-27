@@ -663,6 +663,60 @@ app.get("/api/admin/students/:uid/entries", requireAdmin, async (req, res) => {
   }
 });
 
+// ── Admin: flat feed of individual entries, most-recent first ────────────────
+app.get("/api/admin/entries/feed", requireAdmin, async (req, res) => {
+  try {
+    const { project = "", period = "week", search = "", date = "", limit = "100" } = req.query;
+    const ps = periodStart(period, date);
+    const pe = periodEnd(period, date);
+
+    const { rows } = await pool.query(`
+      SELECT e.*, u.name AS user_name, u.email AS user_email, u.photo AS user_photo
+      FROM entries e LEFT JOIN users u ON u.id = e.uid
+      ORDER BY e.start DESC
+    `);
+    let entries = rows.map(parseEntry);
+
+    if (search) {
+      const q = search.toLowerCase();
+      entries = entries.filter(e =>
+        (e.user_name || "").toLowerCase().includes(q) ||
+        (e.user_email || "").toLowerCase().includes(q)
+      );
+    }
+    if (ps)      entries = entries.filter(e => new Date(e.start) >= ps);
+    if (pe)      entries = entries.filter(e => new Date(e.start) <= pe);
+    if (project) entries = entries.filter(e => e.projectId === project);
+
+    const totalEntries = entries.length;
+    const limited = entries.slice(0, Math.max(1, parseInt(limit, 10) || 100));
+
+    const feed = limited.map(e => ({
+      id:                e.id,
+      desc:              e.desc,
+      tags:              e.tags,
+      projectId:         e.projectId,
+      duration:          e.duration,
+      dateShort:         new Date(e.start).toLocaleDateString([], { month: "short", day: "numeric" }),
+      startFormatted:    fmtTime(e.start),
+      endFormatted:      fmtTime(e.end),
+      durationFormatted: fmtSec(e.duration),
+      projectName:       e.projectId ? PROJECTS[e.projectId]?.name  : null,
+      projectColor:      e.projectId ? PROJECTS[e.projectId]?.color : null,
+      studentName:       e.user_name || e.user_email || "Unknown",
+      studentEmail:      e.user_email || "",
+      avatarColor:       avatarColor(e.user_email || e.uid),
+      initials:          avatarInitials(e.user_name || e.user_email),
+      photo:             e.user_photo || null,
+    }));
+
+    res.json({ entries: feed, totalEntries });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 // ── Admin: all raw entries (CSV export) ───────────────────────────────────────
 app.get("/api/admin/entries", requireAdmin, async (req, res) => {
   try {
