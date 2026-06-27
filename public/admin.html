@@ -100,6 +100,7 @@
     </select>
     <select class="filter-select" id="week-filter" onchange="loadData()">
       <option value="week">This week</option>
+      <option value="month">This month</option>
       <option value="all">All time</option>
     </select>
   </div>
@@ -235,10 +236,14 @@ async function loadStats() {
 
     // ✅ Update label to match selected period
     const statWeekCard = document.getElementById("stat-week").closest(".stat-card");
-    statWeekCard.querySelector(".stat-label").textContent = period === "all" ? "Hours all time" : "Hours this week";
+    if (period === "all")        statWeekCard.querySelector(".stat-label").textContent = "Hours all time";
+    else if (period === "month") statWeekCard.querySelector(".stat-label").textContent = "Hours this month";
+    else                         statWeekCard.querySelector(".stat-label").textContent = "Hours this week";
 
     const statAvgCard = document.getElementById("stat-avg").closest(".stat-card");
-    statAvgCard.querySelector(".stat-label").textContent = period === "all" ? "Avg all time" : "Avg this week";
+    if (period === "all")        statAvgCard.querySelector(".stat-label").textContent = "Avg all time";
+    else if (period === "month") statAvgCard.querySelector(".stat-label").textContent = "Avg this month";
+    else                         statAvgCard.querySelector(".stat-label").textContent = "Avg this week";
   } catch(e) { console.error("Failed to load stats:", e); }
 }
 
@@ -351,7 +356,7 @@ function renderStudents(students, period) {
           <div class="student-stats">
             ${projCols}
             <div class="sstats-item">
-              <div class="sstats-label">${period==="week"?"This week":"Total"}</div>
+              <div class="sstats-label">${period==="week"?"This week":period==="month"?"This month":"Total"}</div>
               <div class="sstats-val mono">${u.totalFormatted}</div>
             </div>
             <div class="sstats-item">

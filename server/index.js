@@ -500,24 +500,24 @@ app.delete("/api/entries/:id", requireAuth, async (req, res) => {
 // ── Admin: aggregated stats ───────────────────────────────────────────────────
 app.get("/api/admin/stats", requireAdmin, async (req, res) => {
   try {
-    const { period = "week" } = req.query;  // ✅ read period
-    const ws = weekStart();
+    const { period = "week" } = req.query;
+    const ps = periodStart(period);
 
-    const { rows: r1 } = period === "all"
-      ? await pool.query("SELECT COALESCE(SUM(duration),0)::int AS weeksecs FROM entries")
-      : await pool.query(
+    const { rows: r1 } = ps
+      ? await pool.query(
           "SELECT COALESCE(SUM(duration),0)::int AS weeksecs FROM entries WHERE start >= $1",
-          [ws.toISOString()]
-        );
+          [ps.toISOString()]
+        )
+      : await pool.query("SELECT COALESCE(SUM(duration),0)::int AS weeksecs FROM entries");
 
     const { rows: r2 } = await pool.query("SELECT COUNT(*)::int AS totalentries FROM entries");
     const { rows: r3 } = await pool.query("SELECT COUNT(DISTINCT uid)::int AS totalstudents FROM entries");
-    const { rows: r4 } = period === "all"
-      ? await pool.query("SELECT COUNT(DISTINCT uid)::int AS weekstudents FROM entries")
-      : await pool.query(
+    const { rows: r4 } = ps
+      ? await pool.query(
           "SELECT COUNT(DISTINCT uid)::int AS weekstudents FROM entries WHERE start >= $1",
-          [ws.toISOString()]
-        );
+          [ps.toISOString()]
+        )
+      : await pool.query("SELECT COUNT(DISTINCT uid)::int AS weekstudents FROM entries");
 
     const weekSecs      = r1[0].weeksecs;
     const totalEntries  = r2[0].totalentries;
@@ -543,6 +543,7 @@ app.get("/api/admin/stats", requireAdmin, async (req, res) => {
 app.get("/api/admin/students", requireAdmin, async (req, res) => {
   try {
     const { project = "", period = "week", search = "" } = req.query;
+    const ps = periodStart(period);
     const ws = weekStart();
 
     const { rows: allUsers } = await pool.query(
@@ -569,15 +570,15 @@ app.get("/api/admin/students", requireAdmin, async (req, res) => {
       const allRows = entriesByUid[u.id] || [];
 
       let filtered = allRows;
-      if (period === "week") filtered = filtered.filter(e => new Date(e.start) >= ws);
-      if (project)           filtered = filtered.filter(e => e.projectId === project);
+      if (ps) filtered = filtered.filter(e => new Date(e.start) >= ps);
+      if (project) filtered = filtered.filter(e => e.projectId === project);
 
       const weekRows = allRows.filter(e => new Date(e.start) >= ws);
 
       const projTotals = {};
       allRows
         .filter(e => e.projectId && (!project || e.projectId === project))
-        .filter(e => period !== "week" || new Date(e.start) >= ws)
+        .filter(e => !ps || new Date(e.start) >= ps)
         .forEach(e => { projTotals[e.projectId] = (projTotals[e.projectId] || 0) + e.duration; });
 
       const projBreakdown = Object.entries(projTotals)
@@ -616,7 +617,7 @@ app.get("/api/admin/students", requireAdmin, async (req, res) => {
 app.get("/api/admin/students/:uid/entries", requireAdmin, async (req, res) => {
   try {
     const { project = "", period = "week" } = req.query;
-    const ws = weekStart();
+    const ps = periodStart(period);
 
     const { rows: userRows } = await pool.query("SELECT * FROM users WHERE id = $1", [req.params.uid]);
     if (!userRows[0]) return res.status(404).json({ error: "User not found" });
@@ -627,8 +628,8 @@ app.get("/api/admin/students/:uid/entries", requireAdmin, async (req, res) => {
     );
     let filtered = rows.map(parseEntry);
 
-    if (period === "week") filtered = filtered.filter(e => new Date(e.start) >= ws);
-    if (project)           filtered = filtered.filter(e => e.projectId === project);
+    if (ps)      filtered = filtered.filter(e => new Date(e.start) >= ps);
+    if (project) filtered = filtered.filter(e => e.projectId === project);
 
     const entries = filtered.slice(0, 50).map(e => ({
       id:                e.id,
@@ -670,7 +671,7 @@ app.get("/api/admin/entries", requireAdmin, async (req, res) => {
 app.get("/api/admin/export", requireAdmin, async (req, res) => {
   try {
     const { project = "", period = "week", search = "" } = req.query;
-    const ws = weekStart();
+    const ps = periodStart(period);
 
     let { rows: users } = await pool.query(
       "SELECT DISTINCT u.* FROM users u JOIN entries e ON e.uid = u.id"
@@ -690,8 +691,8 @@ app.get("/api/admin/export", requireAdmin, async (req, res) => {
       .map(row => ({ ...parseEntry(row), userName: row.user_name, userEmail: row.user_email }))
       .filter(e => uids.has(e.uid));
 
-    if (period === "week") entries = entries.filter(e => new Date(e.start) >= ws);
-    if (project)           entries = entries.filter(e => e.projectId === project);
+    if (ps)      entries = entries.filter(e => new Date(e.start) >= ps);
+    if (project) entries = entries.filter(e => e.projectId === project);
 
     const toDate     = iso => { const d=new Date(iso); return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}/${d.getFullYear()}`; };
     const toTime     = iso => new Date(iso).toLocaleTimeString("en-US",{hour12:true,hour:"2-digit",minute:"2-digit",second:"2-digit"});
@@ -837,6 +838,19 @@ function weekStart() {
   ws.setDate(ws.getDate() - ws.getDay());
   ws.setHours(0, 0, 0, 0);
   return ws;
+}
+
+function monthStart() {
+  const ms = new Date();
+  ms.setDate(1);
+  ms.setHours(0, 0, 0, 0);
+  return ms;
+}
+
+function periodStart(period) {
+  if (period === "week")  return weekStart();
+  if (period === "month") return monthStart();
+  return null; // "all"
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
