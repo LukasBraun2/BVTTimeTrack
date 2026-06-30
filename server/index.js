@@ -2,6 +2,7 @@ require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") }
 
 const express     = require("express");
 const session     = require("express-session");
+const pgSessionInit = require("connect-pg-simple");
 const passport    = require("passport");
 const GoogleStrat = require("passport-google-oauth20").Strategy;
 const path        = require("path");
@@ -166,13 +167,34 @@ passport.deserializeUser(async (id, done) => {
 // ── Express app ───────────────────────────────────────────────────────────────
 const app = express();
 
+// Render (and most hosts) sit behind a reverse proxy; trusting it lets
+// express-session/cookies behave correctly (e.g. secure cookies, IPs for rate limiting).
+app.set("trust proxy", 1);
+
+const PgSession = pgSessionInit(session);
 app.use(session({
+  store: new PgSession({
+    pool,                          // reuse the existing pg Pool
+    tableName: "user_sessions",    // created automatically if missing
+    createTableIfMissing: true,
+  }),
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 },
 }));
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
+// If a request body is malformed or too large, body-parser throws before any
+// route runs. Without this handler, Express's default error page is HTML,
+// which breaks clients that always expect JSON back (e.g. admin.html).
+app.use((err, req, res, next) => {
+  if (err && (err.type === "entity.too.large" || err instanceof SyntaxError)) {
+    return res.status(400).json({ error: err.type === "entity.too.large"
+      ? "Upload too large — try importing a smaller file or fewer rows at a time."
+      : "Malformed request body." });
+  }
+  next(err);
+});
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(express.static(path.join(__dirname, "..", "public")));
@@ -666,7 +688,7 @@ app.get("/api/admin/students/:uid/entries", requireAdmin, async (req, res) => {
 // ── Admin: flat feed of individual entries, most-recent first ────────────────
 app.get("/api/admin/entries/feed", requireAdmin, async (req, res) => {
   try {
-    const { project = "", period = "week", search = "", date = "", limit = "100" } = req.query;
+    const { project = "", period = "week", search = "", date = "", limit = "100", offset = "0" } = req.query;
     const ps = periodStart(period, date);
     const pe = periodEnd(period, date);
 
@@ -689,7 +711,13 @@ app.get("/api/admin/entries/feed", requireAdmin, async (req, res) => {
     if (project) entries = entries.filter(e => e.projectId === project);
 
     const totalEntries = entries.length;
-    const limited = entries.slice(0, Math.max(1, parseInt(limit, 10) || 100));
+    const offsetNum = Math.max(0, parseInt(offset, 10) || 0);
+    // limit=0 (or "all") means "no cap" — return every matching entry
+    const rawLimit   = String(limit).toLowerCase();
+    const limitNum   = (rawLimit === "all" || rawLimit === "0")
+      ? totalEntries
+      : Math.max(1, parseInt(limit, 10) || 100);
+    const limited = entries.slice(offsetNum, offsetNum + limitNum);
 
     const feed = limited.map(e => ({
       id:                e.id,
@@ -710,7 +738,13 @@ app.get("/api/admin/entries/feed", requireAdmin, async (req, res) => {
       photo:             e.user_photo || null,
     }));
 
-    res.json({ entries: feed, totalEntries });
+    res.json({
+      entries: feed,
+      totalEntries,
+      offset: offsetNum,
+      limit: limitNum,
+      hasMore: offsetNum + feed.length < totalEntries,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error" });
