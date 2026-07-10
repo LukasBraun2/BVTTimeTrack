@@ -48,6 +48,17 @@ if (!config.adminPasswordHash) {
   console.log("✅  Admin password hashed and saved.");
 }
 
+if (!config.adminTzPasswordHash) {
+  const initialTzPassword = process.env.ADMIN_TZ_PASSWORD;
+  if (!initialTzPassword || initialTzPassword.length < 8) {
+    console.error("\n❌  Set ADMIN_TZ_PASSWORD (≥8 chars) as an environment variable before starting.\n");
+    process.exit(1);
+  }
+  config.adminTzPasswordHash = bcrypt.hashSync(initialTzPassword, 12);
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  console.log("✅  Timezones-page password hashed and saved.");
+}
+
 // ── PostgreSQL pool ───────────────────────────────────────────────────────────
 if (!process.env.DATABASE_URL) {
   console.error("\n❌  Missing DATABASE_URL environment variable.\n");
@@ -80,13 +91,17 @@ async function initDb() {
       start      TEXT NOT NULL,
       "end"      TEXT NOT NULL,
       duration   INTEGER NOT NULL,
-      created    BIGINT NOT NULL
+      created    BIGINT NOT NULL,
+      tz         TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_entries_uid       ON entries(uid);
     CREATE INDEX IF NOT EXISTS idx_entries_start     ON entries(start);
     CREATE INDEX IF NOT EXISTS idx_entries_uid_start ON entries(uid, start);
   `);
+  // Older databases created before the `tz` column existed won't get it from
+  // CREATE TABLE IF NOT EXISTS, so add it explicitly if missing.
+  await pool.query(`ALTER TABLE entries ADD COLUMN IF NOT EXISTS tz TEXT;`);
   console.log("✅  Database schema ready.");
 }
 
@@ -293,12 +308,77 @@ app.get("/api/auth/admin/check", (req, res) => {
   res.json({ ok: !!req.session.isAdmin });
 });
 
+// ── Timezones-page auth (separate password/session from the main admin login) ─
+const tzLoginAttempts = new Map();
+function isTzRateLimited(ip) {
+  const now = Date.now(), windowMs = 15 * 60 * 1000;
+  const entry = tzLoginAttempts.get(ip) || { count: 0, resetAt: now + windowMs };
+  if (now > entry.resetAt) { tzLoginAttempts.set(ip, { count: 0, resetAt: now + windowMs }); return false; }
+  return entry.count >= 5;
+}
+function recordTzFailedAttempt(ip) {
+  const now = Date.now(), windowMs = 15 * 60 * 1000;
+  const entry = tzLoginAttempts.get(ip) || { count: 0, resetAt: now + windowMs };
+  entry.count++;
+  tzLoginAttempts.set(ip, entry);
+}
+function clearTzAttempts(ip) { tzLoginAttempts.delete(ip); }
+
+function requireTzAdmin(req, res, next) {
+  if (req.session.isTzAdmin) return next();
+  return res.status(401).json({ error: "Unauthorized" });
+}
+
+app.post("/api/auth/admin-tz", async (req, res) => {
+  const ip = req.ip;
+  if (isTzRateLimited(ip))
+    return res.status(429).json({ error: "Too many attempts. Try again in 15 minutes." });
+  const { password } = req.body;
+  const match = password && await bcrypt.compare(password, config.adminTzPasswordHash);
+  if (!match) {
+    recordTzFailedAttempt(ip);
+    return res.status(401).json({ error: "Wrong password" });
+  }
+  clearTzAttempts(ip);
+  req.session.isTzAdmin = true;
+  res.json({ ok: true });
+});
+
+app.post("/api/auth/admin-tz/logout", (req, res) => {
+  req.session.isTzAdmin = false;
+  res.json({ ok: true });
+});
+
+app.get("/api/auth/admin-tz/check", (req, res) => {
+  res.json({ ok: !!req.session.isTzAdmin });
+});
+
 
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 const fmtSec   = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
 const fmtShort = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; };
-const fmtTime = d => {
+
+// ── Timezone handling ─────────────────────────────────────────────────────────
+// Entries created before this change store "start"/"end" as naive local
+// wall-clock strings (e.g. "2024-05-01T14:30:00.000") with no zone info —
+// they must keep displaying exactly as entered, forever. Entries created
+// from now on are stored as real, unambiguous instants (an ISO string
+// ending in "Z" or a "+HH:MM"/"-HH:MM" offset). hasTZInfo() tells the two
+// apart so old rows are never touched or reinterpreted.
+const PACIFIC_TZ = "America/Los_Angeles";
+const hasTZInfo  = v => typeof v === "string" && /(Z|[+-]\d{2}:?\d{2})$/.test(v.trim());
+
+// `tz` is only consulted for timezone-aware values; naive values always
+// fall back to the original string-parsing behavior so nothing about
+// previously-saved entries changes.
+const fmtTime = (d, tz) => {
+  if (hasTZInfo(d)) {
+    return new Date(d).toLocaleTimeString("en-US", {
+      hour12: true, hour: "numeric", minute: "2-digit",
+      timeZone: tz || PACIFIC_TZ,
+    });
+  }
   const t = String(d).split("T")[1] || "";
   const [h, m] = t.split(":");
   const hour = parseInt(h, 10);
@@ -306,31 +386,75 @@ const fmtTime = d => {
   const h12  = hour % 12 === 0 ? 12 : hour % 12;
   return `${h12}:${m} ${ampm}`;
 };
-const fmtDate = d => {
+const fmtDate = (d, tz) => {
+  if (hasTZInfo(d)) {
+    return new Date(d).toLocaleDateString("en-US", {
+      weekday: "long", month: "short", day: "numeric", timeZone: tz || PACIFIC_TZ,
+    });
+  }
   const dateStr = String(d).split("T")[0]; // "2024-05-01"
   const [y, mo, day] = dateStr.split("-").map(Number);
   const dd = new Date(y, mo - 1, day);
   return dd.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
 };
+const fmtDateShort = (d, tz) => {
+  if (hasTZInfo(d)) {
+    return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: tz || PACIFIC_TZ });
+  }
+  const dateStr = String(d).split("T")[0];
+  const [y, mo, day] = dateStr.split("-").map(Number);
+  return new Date(y, mo - 1, day).toLocaleDateString([], { month: "short", day: "numeric" });
+};
+
+// ORDER BY start DESC in SQL sorts the *raw stored string*. For naive rows
+// that string IS the displayed clock time, so raw-string order matches what
+// gets printed. But a timezone-aware row is stored as a UTC instant and
+// displayed converted into a target zone (Pacific, or the viewer's zone) —
+// so its raw string's hour/date digits can differ from what's printed,
+// letting it land in the "wrong" spot relative to naive rows next to it.
+// This builds a sort key from the *same wall-clock digits that get printed*
+// for a given `tz`, so list order always matches the printed order.
+function displaySortKey(v, tz) {
+  if (hasTZInfo(v)) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz || PACIFIC_TZ, hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).formatToParts(new Date(v));
+    const get = t => parts.find(p => p.type === t).value;
+    return Date.UTC(+get("year"), +get("month") - 1, +get("day"), +get("hour"), +get("minute"), +get("second"));
+  }
+  const m = String(v).match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return 0;
+  const [, y, mo, day, h, mi, s] = m.map(Number);
+  return Date.UTC(y, mo - 1, day, h, mi, s);
+}
+const byDisplayTimeDesc = (tz) => (a, b) => displaySortKey(b.start, tz) - displaySortKey(a.start, tz);
 
 // ── Entries: list ─────────────────────────────────────────────────────────────
 app.get("/api/entries/list", requireAuth, async (req, res) => {
   try {
+    // The client sends its own IANA timezone (e.g. "America/Denver") so that
+    // timezone-aware entries (created after this feature shipped) render in
+    // *that browser's* local time. Naive/legacy entries ignore this entirely
+    // and keep displaying exactly as they were entered.
+    const clientTz = typeof req.query.tz === "string" && req.query.tz ? req.query.tz : undefined;
+
     const { rows } = await pool.query(
       'SELECT * FROM entries WHERE uid = $1 ORDER BY start DESC',
       [req.user.id]
     );
-    const entries = rows.map(parseEntry);
+    const entries = rows.map(parseEntry).sort(byDisplayTimeDesc(clientTz));
     const dayMap  = {};
 
     entries.forEach(e => {
-      const label = fmtDate(e.start);
+      const label = fmtDate(e.start, clientTz);
       if (!dayMap[label]) dayMap[label] = [];
       const p = e.projectId ? PROJECTS[e.projectId] : null;
       dayMap[label].push({
         ...e,
-        startFormatted:    fmtTime(e.start),
-        endFormatted:      fmtTime(e.end),
+        startFormatted:    fmtTime(e.start, clientTz),
+        endFormatted:      fmtTime(e.end, clientTz),
         durationFormatted: fmtSec(e.duration),
         projectName:       p?.name  || null,
         projectColor:      p?.color || null,
@@ -445,17 +569,21 @@ app.get("/api/entries", requireAuth, async (req, res) => {
 
 // ── Entries: create ───────────────────────────────────────────────────────────
 app.post("/api/entries", requireAuth, async (req, res) => {
-  const { desc, projectId, tags, start, end, duration } = req.body;
+  const { desc, projectId, tags, start, end, duration, tz } = req.body;
   if (!start || !end || duration == null)
     return res.status(400).json({ error: "Missing fields" });
+
+  // Only accept plausible IANA zone strings (e.g. "America/Denver", "UTC");
+  // anything else is dropped rather than stored.
+  const clientTz = typeof tz === "string" && /^[A-Za-z0-9_+\-\/]{1,64}$/.test(tz) ? tz : null;
 
   try {
     const id = newId();
     await pool.query(
-      `INSERT INTO entries (id, uid, "desc", project_id, tags, start, "end", duration, created)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      `INSERT INTO entries (id, uid, "desc", project_id, tags, start, "end", duration, created, tz)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [id, req.user.id, desc || "Untitled", projectId || null,
-       JSON.stringify(tags || []), start, end, duration, Date.now()]
+       JSON.stringify(tags || []), start, end, duration, Date.now(), clientTz]
     );
     const { rows } = await pool.query("SELECT * FROM entries WHERE id = $1", [id]);
     res.status(201).json(parseEntry(rows[0]));
@@ -640,6 +768,94 @@ app.get("/api/admin/students", requireAdmin, async (req, res) => {
   }
 });
 
+// ── Admin: timezones entries were logged from ────────────────────────────────
+// Surfaces which IANA timezone each student's browser reported at the moment
+// they saved a log entry. Useful for spotting students logging from an
+// unexpected zone (e.g. a supposed-local student whose entries all come in
+// from a different region), not for tracking anyone's real-time location —
+// we only have whatever zone was recorded on each past entry.
+app.get("/api/admin/timezones", requireTzAdmin, async (req, res) => {
+  try {
+    const { rows: users }   = await pool.query("SELECT * FROM users");
+    const { rows: entries } = await pool.query(
+      'SELECT id, uid, tz, start, "desc" FROM entries ORDER BY start DESC'
+    );
+
+    const userById = {};
+    for (const u of users) userById[u.id] = u;
+
+    const byUid = {};
+    for (const e of entries) {
+      (byUid[e.uid] = byUid[e.uid] || []).push(e);
+    }
+
+    let totalWithTz = 0, totalWithoutTz = 0;
+
+    const students = users
+      .map(u => {
+        const rows = byUid[u.id] || [];
+        if (!rows.length) return null;
+
+        const tzCounts = {}; // tz -> { count, lastSeen }
+        let missing = 0;
+        for (const r of rows) {
+          if (!r.tz) { missing++; continue; }
+          if (!tzCounts[r.tz]) tzCounts[r.tz] = { tz: r.tz, count: 0, lastSeen: r.start };
+          tzCounts[r.tz].count++;
+          if (new Date(r.start) > new Date(tzCounts[r.tz].lastSeen)) tzCounts[r.tz].lastSeen = r.start;
+        }
+
+        totalWithTz    += rows.length - missing;
+        totalWithoutTz += missing;
+
+        const timezones = Object.values(tzCounts).sort((a, b) => b.count - a.count);
+
+        return {
+          uid:          u.id,
+          displayName:  u.name,
+          email:        u.email,
+          avatarColor:  avatarColor(u.email),
+          initials:     avatarInitials(u.name),
+          photo:        u.photo,
+          totalEntries: rows.length,
+          missingTz:    missing,
+          timezones,                                   // sorted, most-used first
+          primaryTz:    timezones[0]?.tz || null,
+          lastSeenTz:   [...timezones].sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen))[0]?.tz || null,
+          multiTz:      timezones.length > 1,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (b.multiTz - a.multiTz) || (b.totalEntries - a.totalEntries));
+
+    // Flat, entry-by-entry list (most recent first) — every log, one row each,
+    // with the student attached so it can be searched/filtered on the client.
+    const entryLog = entries.map(e => {
+      const u = userById[e.uid] || {};
+      return {
+        id:          e.id,
+        uid:         e.uid,
+        displayName: u.name  || "Unknown",
+        email:       u.email || "",
+        desc:        e.desc,
+        start:       e.start,
+        tz:          e.tz || null,
+      };
+    });
+
+    res.json({
+      students,
+      entryLog,
+      totalEntries:   entries.length,
+      totalWithTz,
+      totalWithoutTz,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 // ── Admin: entries for one student ───────────────────────────────────────────
 app.get("/api/admin/students/:uid/entries", requireAdmin, async (req, res) => {
   try {
@@ -659,6 +875,7 @@ app.get("/api/admin/students/:uid/entries", requireAdmin, async (req, res) => {
     if (ps)      filtered = filtered.filter(e => new Date(e.start) >= ps);
     if (pe)      filtered = filtered.filter(e => new Date(e.start) <= pe);
     if (project) filtered = filtered.filter(e => e.projectId === project);
+    filtered.sort(byDisplayTimeDesc());
 
     const entries = filtered.slice(0, 50).map(e => ({
       id:                e.id,
@@ -666,7 +883,7 @@ app.get("/api/admin/students/:uid/entries", requireAdmin, async (req, res) => {
       tags:              e.tags,
       projectId:         e.projectId,
       duration:          e.duration,
-      dateShort:         new Date(e.start).toLocaleDateString([], { month: "short", day: "numeric" }),
+      dateShort:         fmtDateShort(e.start),
       startFormatted:    fmtTime(e.start),
       endFormatted:      fmtTime(e.end),
       durationFormatted: fmtSec(e.duration),
@@ -710,16 +927,16 @@ app.get("/api/admin/entries/feed", requireAdmin, async (req, res) => {
       ? totalEntries
       : Math.max(1, parseInt(limit, 10) || 100);
 
-    const dataParams = [...params, limitNum, offsetNum];
+    const dataParams = [...params];
     const { rows } = await pool.query(
       `SELECT e.*, u.name AS user_name, u.email AS user_email, u.photo AS user_photo
        FROM entries e LEFT JOIN users u ON u.id = e.uid
-       ${whereSql}
-       ORDER BY e.start DESC
-       LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
+       ${whereSql}`,
       dataParams
     );
-    const entries = rows.map(parseEntry);
+    const entries = rows.map(parseEntry)
+      .sort(byDisplayTimeDesc())
+      .slice(offsetNum, offsetNum + limitNum);
 
     const feed = entries.map(e => ({
       id:                e.id,
@@ -727,7 +944,7 @@ app.get("/api/admin/entries/feed", requireAdmin, async (req, res) => {
       tags:              e.tags,
       projectId:         e.projectId,
       duration:          e.duration,
-      dateShort:         new Date(e.start).toLocaleDateString([], { month: "short", day: "numeric" }),
+      dateShort:         fmtDateShort(e.start),
       startFormatted:    fmtTime(e.start),
       endFormatted:      fmtTime(e.end),
       durationFormatted: fmtSec(e.duration),
@@ -796,9 +1013,22 @@ app.get("/api/admin/export", requireAdmin, async (req, res) => {
     if (ps)      entries = entries.filter(e => new Date(e.start) >= ps);
     if (pe)      entries = entries.filter(e => new Date(e.start) <= pe);
     if (project) entries = entries.filter(e => e.projectId === project);
+    entries.sort(byDisplayTimeDesc());
 
-    const toDate     = iso => { const d=new Date(iso); return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}/${d.getFullYear()}`; };
-    const toTime     = iso => new Date(iso).toLocaleTimeString("en-US",{hour12:true,hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    const toDate = iso => {
+      if (hasTZInfo(iso)) {
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: PACIFIC_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+        }).formatToParts(new Date(iso));
+        const get = t => parts.find(p => p.type === t).value;
+        return `${get("month")}/${get("day")}/${get("year")}`;
+      }
+      const d = new Date(iso);
+      return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}/${d.getFullYear()}`;
+    };
+    const toTime = iso => hasTZInfo(iso)
+      ? new Date(iso).toLocaleTimeString("en-US",{hour12:true,hour:"numeric",minute:"2-digit",timeZone:PACIFIC_TZ})
+      : new Date(iso).toLocaleTimeString("en-US",{hour12:true,hour:"numeric",minute:"2-digit"});
     const toDuration = secs => { const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60; return `${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`; };
     const escape     = v => `"${String(v??"").replace(/"/g,'""')}"`;
 
