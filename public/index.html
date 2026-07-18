@@ -67,10 +67,6 @@
           </button>
           <div class="topbar-title" id="topbar-title">Time Tracker</div>
         </div>
-        <div class="topbar-stats">
-          <div class="tstat"><div class="tstat-label">Today</div><div class="tstat-val mono" id="stat-today">00:00:00</div></div>
-          <div class="tstat"><div class="tstat-label">This week</div><div class="tstat-val mono" id="stat-week">00:00:00</div></div>
-        </div>
       </div>
 
       <!-- Tracker view -->
@@ -106,9 +102,10 @@
               </div>
               <div id="timer-controls-manual" style="display:none;">
                 <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
-                  <input type="date" class="time-input mono" id="manual-date" style="width:130px;"/>
+                  <input type="date" class="time-input mono" id="manual-start-date" style="width:130px;"/>
                   <input type="time" class="time-input mono" id="manual-start"/>
                   <span style="color:var(--t2);font-size:13px;">—</span>
+                  <input type="date" class="time-input mono" id="manual-end-date" style="width:130px;"/>
                   <input type="time" class="time-input mono" id="manual-end"/>
                   <button class="add-btn" onclick="logManual()">+ Add</button>
                 </div>
@@ -167,7 +164,11 @@
       <select id="edit-proj"><option value="">No project</option></select>
     </div>
     <div class="field"><label>Date</label>
-      <input type="date" id="edit-date" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:13.5px;color:var(--t0);font-family:'Geist Mono',monospace;outline:none;transition:border-color .15s;" oninput="updateEditDur()"/>
+      <div class="time-row">
+        <div class="time-col"><div class="time-col-lbl">Start date</div><input type="date" id="edit-start-date" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:13.5px;color:var(--t0);font-family:'Geist Mono',monospace;outline:none;transition:border-color .15s;" oninput="updateEditDur()"/></div>
+        <div class="time-arrow">&#8594;</div>
+        <div class="time-col"><div class="time-col-lbl">End date</div><input type="date" id="edit-end-date" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-size:13.5px;color:var(--t0);font-family:'Geist Mono',monospace;outline:none;transition:border-color .15s;" oninput="updateEditDur()"/></div>
+      </div>
     </div>
     <div class="field"><label>Time</label>
       <div class="time-row">
@@ -241,7 +242,6 @@ window.selectedProj   = null;
 window.selectedTags   = [];
 window.currentUser    = null;
 window.entryDays      = [];
-window.statsBase      = { todaySeconds: 0, weekSeconds: 0 };
 
 // ── Helpers (live timer display + edit modal only) ────────────────────────────
 const fmt      = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; };
@@ -343,26 +343,14 @@ function onUserSignedIn(user) {
 async function loadEntries() {
   $("db-loading").style.display = "block";
   try {
-    const [listRes, statsRes] = await Promise.all([
-      fetch(`${API}/api/entries/list?tz=${encodeURIComponent(CLIENT_TZ)}`),
-      fetch(`${API}/api/entries/stats`),
-    ]);
+    const listRes = await fetch(`${API}/api/entries/list?tz=${encodeURIComponent(CLIENT_TZ)}`);
     window.entryDays = await listRes.json();
-    window.statsBase = await statsRes.json();
     $("db-loading").style.display = "none";
     renderEntries();
-    updateTopStats();
   } catch(e) {
     console.error("Failed to load entries:", e);
     $("db-loading").style.display = "none";
   }
-}
-
-// ── Top stats — server base + live timer offset ───────────────────────────────
-function updateTopStats() {
-  const live = window.timerStart ? Math.floor((Date.now() - window.timerStart) / 1000) : 0;
-  $("stat-today").textContent = fmt((window.statsBase.todaySeconds || 0) + live);
-  $("stat-week").textContent  = fmt((window.statsBase.weekSeconds  || 0) + live);
 }
 
 // ── Reports — entirely server-computed ───────────────────────────────────────
@@ -473,7 +461,6 @@ window.startTimer = () => {
   $("main-btn").innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="white"><rect x="3" y="3" width="18" height="18" rx="2.5"/></svg>';
   window.timerInterval = setInterval(() => {
     $("elapsed-display").textContent = fmt(Math.floor((Date.now() - window.timerStart) / 1000));
-    updateTopStats();
   }, 1000);
 };
 
@@ -498,25 +485,44 @@ window.stopTimer = async () => {
 
 // ── Manual log ────────────────────────────────────────────────────────────────
 window.logManual = async () => {
-  const ms = $("manual-start").value, me = $("manual-end").value, md = $("manual-date").value;
+  const ms = $("manual-start").value, me = $("manual-end").value;
+  const msd = $("manual-start-date").value, med = $("manual-end-date").value;
   if (!ms || !me) { showTimerErr("Please set both start and end time."); return; }
-  if (!md)        { showTimerErr("Please select a date."); return; }
+  if (!msd || !med) { showTimerErr("Please select a start and end date."); return; }
   // Interpreting "date + time" with `new Date(...)` (no zone suffix) reads it
   // as this browser's local wall-clock moment, so the instant is correct;
   // saveEntry() then converts it to a real timezone-aware ISO string.
-  const startDate = new Date(md + "T" + ms), endDate = new Date(md + "T" + me);
+  const startDate = new Date(msd + "T" + ms), endDate = new Date(med + "T" + me);
   const dur = Math.floor((endDate - startDate) / 1000);
-  if (dur < 0) { showTimerErr("End time must be after start time."); return; }
+  if (dur < 0) { showTimerErr("End must be after start."); return; }
   await saveEntry({ desc: $("timer-desc").value || "Untitled", projectId: window.selectedProj, tags: [...window.selectedTags], start: startDate, end: endDate, duration: dur });
   resetInputs();
   $("manual-start").value = ""; $("manual-end").value = "";
-  $("manual-date").value = toLocalDate(new Date());
+  $("manual-start-date").value = toLocalDate(new Date());
+  $("manual-end-date").value = toLocalDate(new Date());
 };
 function showTimerErr(msg) { const el = $("timer-err"); el.textContent = msg; el.style.display = "block"; setTimeout(() => el.style.display = "none", 4000); }
 
 // ── Mode toggle ───────────────────────────────────────────────────────────────
 window.toggleMode = () => {
   const isManual = window.timerMode === "manual";
+
+  // Switching timer -> manual while the timer is running would otherwise
+  // silently kill the interval without resetting the running-state UI,
+  // leaving the elapsed-time display frozen on its last value. Confirm
+  // first (mirrors editEntry()'s handling of the same situation), and if
+  // the user proceeds, fully tear down the running-timer UI.
+  if (!isManual && window.timerStart) {
+    if (!confirm("Switch to manual entry and discard the running timer?")) return;
+    clearInterval(window.timerInterval);
+    window.timerStart = null;
+    $("timer-card").classList.remove("recording");
+    $("elapsed-display").style.display = "none";
+    $("elapsed-display").textContent = "";
+    $("main-btn").className = "start-btn go";
+    $("main-btn").innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="#0A0B0F"><polygon points="5,3 19,12 5,21"/></svg>';
+  }
+
   window.timerMode = isManual ? "timer" : "manual";
   $("timer-controls-timer").style.display  = isManual ? "block" : "none";
   $("timer-controls-manual").style.display = isManual ? "none" : "flex";
@@ -525,8 +531,7 @@ window.toggleMode = () => {
   $("mode-icon-clock").style.display    = isManual ? "none"  : "block";
   $("rec-badge").style.display    = "none";
   $("manual-badge").style.display = isManual ? "none" : "flex";
-  if (!isManual && window.timerStart) { clearInterval(window.timerInterval); window.timerStart = null; }
-  if (!isManual) $("manual-date").value = toLocalDate(new Date());
+  if (!isManual) { $("manual-start-date").value = toLocalDate(new Date()); $("manual-end-date").value = toLocalDate(new Date()); }
 };
 
 // ── API save / delete ─────────────────────────────────────────────────────────
@@ -559,7 +564,8 @@ window.openEdit = entry => {
   $("edit-id").value    = entry.id;
   $("edit-desc").value  = entry.desc || "";
   $("edit-proj").value  = entry.projectId || "";
-  $("edit-date").value  = toLocalDate(entry.start);
+  $("edit-start-date").value = toLocalDate(entry.start);
+  $("edit-end-date").value   = toLocalDate(entry.end);
   $("edit-start").value = toTimeStr(entry.start);
   $("edit-end").value   = toTimeStr(entry.end);
   $("edit-time-err").style.display = "none";
@@ -576,19 +582,21 @@ window.openEdit = entry => {
 };
 window.closeModal = () => $("edit-modal").classList.remove("open");
 window.updateEditDur = () => {
-  const dateVal = $("edit-date").value, startVal = $("edit-start").value, endVal = $("edit-end").value;
-  if (!dateVal || !startVal || !endVal) { $("edit-dur-display").textContent = "--:--:--"; return; }
-  const dur = Math.floor((new Date(dateVal+"T"+endVal) - new Date(dateVal+"T"+startVal)) / 1000);
+  const startDateVal = $("edit-start-date").value, endDateVal = $("edit-end-date").value;
+  const startVal = $("edit-start").value, endVal = $("edit-end").value;
+  if (!startDateVal || !endDateVal || !startVal || !endVal) { $("edit-dur-display").textContent = "--:--:--"; return; }
+  const dur = Math.floor((new Date(endDateVal+"T"+endVal) - new Date(startDateVal+"T"+startVal)) / 1000);
   const el = $("edit-dur-display");
   el.textContent = dur >= 0 ? fmt(dur) : "--:--:--";
   el.style.color = dur >= 0 ? "var(--accent)" : "var(--red)";
 };
 window.saveEdit = async () => {
-  const id = $("edit-id").value, dateVal = $("edit-date").value;
+  const id = $("edit-id").value;
+  const startDateVal = $("edit-start-date").value, endDateVal = $("edit-end-date").value;
   const startVal = $("edit-start").value, endVal = $("edit-end").value;
-  if (!dateVal) { $("edit-time-err").textContent = "Please select a date."; $("edit-time-err").style.display = "block"; return; }
+  if (!startDateVal || !endDateVal) { $("edit-time-err").textContent = "Please select a start and end date."; $("edit-time-err").style.display = "block"; return; }
   if (!startVal || !endVal) { $("edit-time-err").textContent = "Please set start and end time."; $("edit-time-err").style.display = "block"; return; }
-  const newStart = new Date(dateVal+"T"+startVal), newEnd = new Date(dateVal+"T"+endVal);
+  const newStart = new Date(startDateVal+"T"+startVal), newEnd = new Date(endDateVal+"T"+endVal);
   const dur = Math.floor((newEnd - newStart) / 1000);
   if (dur < 0) { $("edit-time-err").textContent = "End must be after start."; $("edit-time-err").style.display = "block"; return; }
   const tags = [...document.querySelectorAll(".edit-tag-toggle.on")].map(b => b.dataset.tag);
